@@ -1,0 +1,1 @@
+(this is also a kind of second backup of WIP on AMM-stuff; discontinued due to work on Euclid, see the resp. dir)
