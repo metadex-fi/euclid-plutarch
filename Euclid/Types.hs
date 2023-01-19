@@ -92,6 +92,7 @@ newtype PParam (s :: S)
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
                 , "jumpSizes" ':= PJumpSizes 
+                , "initialPrices" ':= PPrices -- for deducing the default active asset
                 , "lowerPriceBounds" ':= PPrices   
                 , "upperPriceBounds" ':= PPrices   
                 , "baseAmountA0" ':= PAmount -- for deducing the default amounts 
@@ -128,8 +129,7 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT -- TODO implement the NFT-mechanics around this later
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "initialPrices" ':= PPrices -- for deducing the default active asset
-                , "currentPrices" ':= PPrices
+                , "prices" ':= PPrices
                 , "activeAmnts" ':= PAmounts
                 , "jumpStorage" ':= PActiveAssets -- (p2,...,pN) -> asset or p2 -> ... -> pN -> asset
                 ]

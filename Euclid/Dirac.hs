@@ -163,7 +163,6 @@ pdefaultActiveAsset = phoistAcyclic $ plam $ \initPs currentPs ->
 pjumpDirac :: forall s. Term s ( PParam 
                             :--> PPrices 
                             :--> PPrices 
-                            :--> PPrices 
                             :--> PAmounts 
                             :--> PAmounts 
                             :--> V1.PValue 'V1.Sorted 'V1.Positive 
@@ -172,7 +171,6 @@ pjumpDirac :: forall s. Term s ( PParam
                             :--> PActiveAssets 
                             :--> PBool )
 pjumpDirac = plam $ \   refDat 
-                        initPrices
                         oldPrices 
                         newPrices 
                         oldAmnts 
@@ -182,6 +180,7 @@ pjumpDirac = plam $ \   refDat
                         oldStorage 
                         newStorage -> P.do 
     ref <- pletFields @[ "jumpSizes"
+                        , "initialPrices"
                         , "lowerPriceBounds"
                         , "upperPriceBounds"
                         , "baseAmountA0"
@@ -189,7 +188,8 @@ pjumpDirac = plam $ \   refDat
                         ] refDat
 
     -- three stages: pre-Jump ("old") --> post-Jump-pre-Flip ("mid") --> post-Flip ("new")
-    let oldActiveAsset = pfromData $ pfirstAsset #$ V1.pforgetPositive $ pto oldAmnts
+    let initPrices = ref.initialPrices
+        oldActiveAsset = pfromData $ pfirstAsset #$ V1.pforgetPositive $ pto oldAmnts
         midActiveAsset = getMidActiveAsset # initPrices # newPrices # oldStorage
         midAmnts = calcMidAmnts # midActiveAsset # newPrices # ref.baseAmountA0
 
@@ -296,7 +296,7 @@ pswap = phoistAcyclic $ plam $ \dat red ctx -> P.do
     info <- pletFields @["inputs", "referenceInputs", "outputs", "mint"] 
             $ pfield @"txInfo" # ctx
 
-    oldDat <- pletFields @["owner", "threadNFT", "paramNFT", "initialPrices", "currentPrices", "activeAmnts", "jumpStorage"] dat
+    oldDat <- pletFields @["owner", "threadNFT", "paramNFT", "prices", "activeAmnts", "jumpStorage"] dat
         
     let oldTxO = pfromJust #$ pfind # (poutHasNFT # oldDat.threadNFT) # info.outputs
         newTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # oldDat.threadNFT) # info.inputs 
@@ -305,39 +305,37 @@ pswap = phoistAcyclic $ plam $ \dat red ctx -> P.do
     new <- pletFields @["address", "value", "datum"] newTxO
 
     PDiracDatum newDat' <- pmatch $ punpackEuclidDatum # new.datum
-    newDat <- pletFields @["owner", "threadNFT", "paramNFT", "initialPrices", "currentPrices", "activeAmnts", "jumpStorage"] $ pfield @"_0" # newDat'
+    newDat <- pletFields @["owner", "threadNFT", "paramNFT", "prices", "activeAmnts", "jumpStorage"] $ pfield @"_0" # newDat'
 
     let oldAmnts = oldDat.activeAmnts 
         newAmnts = passertAmntsSortedPositive # newDat.activeAmnts
 
-    (   ( oldDat.owner          #== newDat.owner            ) #&&
-        ( oldDat.threadNFT      #== newDat.threadNFT        ) #&&
-        ( oldDat.paramNFT       #== newDat.paramNFT         ) #&&
-        ( oldDat.initialPrices  #== newDat.initialPrices    ) #&&
-        ( old.address           #== new.address             ) #&&
+    (   ( oldDat.owner          #== newDat.owner        ) #&&
+        ( oldDat.threadNFT      #== newDat.threadNFT    ) #&&
+        ( oldDat.paramNFT       #== newDat.paramNFT     ) #&&
+        ( old.address           #== new.address         ) #&&
 
         ( pmatch red $ \case 
             PFlip _ -> 
-                ( oldDat.currentPrices  #== newDat.currentPrices    ) #&&
-                ( oldDat.jumpStorage    #== newDat.jumpStorage      ) #&&
+                ( oldDat.prices         #== newDat.prices       ) #&&
+                ( oldDat.jumpStorage    #== newDat.jumpStorage  ) #&&
 
                 ( pflipDirac 
                     # old.value 
                     # new.value 
                     # oldAmnts 
                     # newAmnts 
-                    # oldDat.currentPrices
+                    # oldDat.prices
                 ) 
 
             PJump _ -> P.do 
-                let newPrices = passertPricesSortedPositive # newDat.currentPrices
+                let newPrices = passertPricesSortedPositive # newDat.prices
                 
                     refTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # oldDat.paramNFT) # info.referenceInputs 
                 PParamDatum refDat <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
                 ( pjumpDirac
                     # (pfield @"_0" # refDat) 
-                    # oldDat.initialPrices
-                    # oldDat.currentPrices
+                    # oldDat.prices
                     # newPrices
                     # oldAmnts
                     # newAmnts
