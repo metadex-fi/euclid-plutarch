@@ -126,14 +126,14 @@ pdefaultActiveAsset = phoistAcyclic $ plam $ \initPs currentPs ->
             let initPsNorm = punsafeValScale # initPs #$ pfirstAmnt # currentPs
                 currentPsNorm = punsafeValScale # initPs #$ pfirstAmnt # initPs
                 diff = pposSub # initPsNorm # currentPsNorm -- check which prices are larger than init
-                    pif 
-                        (pnullVal # diff)
-                        (pfirstAsset # initPs) -- if none: return denominator-asset
-                        (pif 
-                            (punaryVal # diff)
-                            (pfirstAsset # diff) -- if one: return that (TODO consider omitting this branch)
-                            (self # initPsNorm # currentPsNorm) -- if more than one - recurse
-                        )
+            pif 
+                (pnullVal # diff)
+                (pfirstAsset # initPs) -- if none: return denominator-asset
+                (pif 
+                    (punaryVal # diff)
+                    (pfirstAsset # diff) -- if one: return that (TODO consider omitting this branch)
+                    (self # initPsNorm # currentPsNorm) -- if more than one - recurse
+                )
 
         -- | subtract & remove negative amounts (Integers)
         pposSub' :: Term s (PInteger :--> PInteger :--> PInteger)
