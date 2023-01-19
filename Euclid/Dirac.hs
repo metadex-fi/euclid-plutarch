@@ -1,5 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-} -- TODO added blindly, verify later
 {-# LANGUAGE ScopedTypeVariables #-} -- TODO does this do anything?
+{-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 -- {-# LANGUAGE ExistentialQuantification #-}
 
 
@@ -353,8 +355,8 @@ padmin = plam $ \owner ctx -> P.do
     (signer #== owner)
 
 
-pdiracValidator :: ClosedTerm PValidator
-pdiracValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do 
+peuclidValidator :: ClosedTerm PValidator
+peuclidValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do 
     let dat = (flip (ptryFrom @PEuclidDatum) fst) dat'
         pass = (pmatch dat $ \case 
             PParamDatum param -> 
@@ -383,8 +385,8 @@ pdiracValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do
 -- | in the frontend for now. Ultimately, the NFTs are to protect the owner.
 -- |
 -- | type PMintingPolicy = PData :--> Contexts.PScriptContext :--> POpaque
-pdiracMinting :: ClosedTerm PMintingPolicy
-pdiracMinting = phoistAcyclic $ plam $ \_ ctx -> P.do
+peuclidMinting :: ClosedTerm PMintingPolicy
+peuclidMinting = phoistAcyclic $ plam $ \_ ctx -> P.do
     let info' = pfield @"txInfo" # ctx
     info <- pletFields @["mint", "signatories"] info'
     let owner = pto $ pfromData $ phead #$ info.signatories

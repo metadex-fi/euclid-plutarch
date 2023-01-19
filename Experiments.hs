@@ -1,3 +1,4 @@
+{-# LANGUAGE QualifiedDo #-}
 
 module Experiments where
 

@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 
 module Evaluate where
 
@@ -12,7 +14,7 @@ import Plutarch.Builtin --(pasInt)
 -- for development
 import Plutarch.Evaluate
 import PlutusCore.Evaluation.Machine.ExBudget (ExBudget)
-import PlutusLedgerApi.V1.Scripts (Script (Script))
+-- import PlutusLedgerApi.V1.Scripts (Script (Script))
 import qualified UntypedPlutusCore as UPLC
 
 {-

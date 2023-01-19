@@ -1,3 +1,6 @@
+{-# LANGUAGE QualifiedDo #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module Euclid.Utils where
 
 import Plutarch --(ClosedTerm, pcon, plam, popaque, (#))
