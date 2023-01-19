@@ -120,11 +120,10 @@ pdefaultActiveAsset = phoistAcyclic $ plam $ \initPs currentPs ->
             -> Term s (V1.PValue 'Sorted V1.NonZero)
             -> Term s (PAsData PAsset)
         f' self initPs currentPs = P.do -- TODO vs. plets
-            -- "normalize" prices to have same first-asset-price 
-            -- by multiplying with other's first asset price;
-            -- the diff will then certainly eliminate the first asset
-            let initPsNorm = punsafeValScale # initPs #$ pfirstAmnt # currentPs
-                currentPsNorm = punsafeValScale # initPs #$ pfirstAmnt # initPs
+            -- "normalize" prices to have same first-asset-price by taking the tails (anticipating 
+            -- the diff and preparing for recursion), then multiplying with other's first asset price
+            let initPsNorm = punsafeValScale # (ptailVal # initPs) #$ pfirstAmnt # currentPs
+                currentPsNorm = punsafeValScale # (ptailVal # currentPs) #$ pfirstAmnt # initPs
                 diff = pposSub # initPsNorm # currentPsNorm -- check which prices are larger than init
             pif 
                 (pnullVal # diff)
