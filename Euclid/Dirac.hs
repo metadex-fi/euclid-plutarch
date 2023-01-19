@@ -119,29 +119,21 @@ pdefaultActiveAsset = phoistAcyclic $ plam $ \initPs currentPs ->
             -> Term s (V1.PValue 'Sorted V1.NonZero)
             -> Term s (V1.PValue 'Sorted V1.NonZero)
             -> Term s (PAsData PAsset)
-        f' self initPs currentPs =
-            plet (pposSub # initPs # currentPs) $ \diff -> -- check which prices are larger than init
-                pif 
-                    (pnullVal # diff)
-                    (pfirstAsset # initPs) -- if none: return denominator-asset
-                    (pif 
-                        (punaryVal # diff)
-                        (pfirstAsset # diff) -- if one: return that
-                        {- 
-                            if more than one - recurse by:
-                                - removing first asset from both prices
-                                - "normalize" results to have same new-first-asset-price 
-                                    by multiplying with other's new first asset price
-                                - recurse 
-                        -}
-                        (P.do
-                            let initPsTail = ptailVal # initPs -- TODO vs. plets
-                                currentPsTail = ptailVal # currentPs
-                                initPsNorm = punsafeValScale # initPsTail #$ pfirstAmnt # currentPsTail
-                                currentPsNorm = punsafeValScale # currentPsTail #$ pfirstAmnt # initPsTail
-                            self # initPsNorm # currentPsNorm
+        f' self initPs currentPs = P.do -- TODO vs. plets
+            -- "normalize" prices to have same first-asset-price 
+            -- by multiplying with other's first asset price;
+            -- the diff will then certainly eliminate the first asset
+            let initPsNorm = punsafeValScale # initPs #$ pfirstAmnt # currentPs
+                currentPsNorm = punsafeValScale # initPs #$ pfirstAmnt # initPs
+                diff = pposSub # initPsNorm # currentPsNorm -- check which prices are larger than init
+                    pif 
+                        (pnullVal # diff)
+                        (pfirstAsset # initPs) -- if none: return denominator-asset
+                        (pif 
+                            (punaryVal # diff)
+                            (pfirstAsset # diff) -- if one: return that (TODO consider omitting this branch)
+                            (self # initPsNorm # currentPsNorm) -- if more than one - recurse
                         )
-                    )
 
         -- | subtract & remove negative amounts (Integers)
         pposSub' :: Term s (PInteger :--> PInteger :--> PInteger)
