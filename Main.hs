@@ -88,6 +88,7 @@ builders =
     , insertStaticBuilder "matchReference" (mkValidatorInfo matchReference)
     , insertStaticBuilder "euclidValidator" (mkValidatorInfo peuclidValidator)
     , insertStaticBuilder "euclidMinting" (mkPolicyInfo peuclidMinting)
+    , insertStaticBuilder "mintAlways" (mkPolicyInfo pmintAlways)
     -- , insertBuilder @Integer
     --     "alwaysSucceedsParam"
     --     (\x -> mkValidatorInfo (alwaysSucceedsParam Plutarch.Prelude.# pconstant x))

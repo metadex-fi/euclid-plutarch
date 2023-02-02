@@ -112,3 +112,8 @@ ptestValueEq = P.do
       val3 = punionWith # (plam (+)) # val1 # val1
       val4 = punionWith # (plam (+)) # val2 # val2
   pshow $ punionWith # (plam (-)) # val1 # val3
+
+
+-- | type PMintingPolicy = PData :--> Contexts.PScriptContext :--> POpaque
+pmintAlways :: ClosedTerm PMintingPolicy
+pmintAlways = plam $ \_ _ -> popaque $ pcon PUnit

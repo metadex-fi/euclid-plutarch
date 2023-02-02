@@ -241,7 +241,7 @@ pjumpDirac = plam $ \   refDat
                     )
                 )
 
-        -- | simply divide first asset's base amount by price of active asset & pack up
+        -- | simply divide A0's base amount by price of active asset & pack up
         calcMidAmnts :: Term s (PAsset :--> PPrices :--> PAmount :--> PAmounts)
         calcMidAmnts = plam $ \activeAsset' prices baseAmountA0 -> P.do 
             activeAsset <- pletFields @["currencySymbol", "tokenName"] activeAsset'
