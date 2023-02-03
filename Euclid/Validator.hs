@@ -38,6 +38,17 @@ pboughtAssetAvailable = plam $ \prices oldAmmPrices -> P.do
     (   ( (pfromData swpp.sold)   * (pfromData ammp.bought) ) #<= 
         ( (pfromData swpp.bought) * (pfromData ammp.sold)   )   )
 
+ -- TODO explicit fees?
+pvalueEquationHolds :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+pvalueEquationHolds = plam $ \prices oldBalances newBalances -> P.do
+    let oldA0' = prices * oldBalances
+        newA0' = prices * newBalances
+    oldA0 <- pletFields @["bought", "sold"] oldA0'
+    newA0 <- pletFields @["bought", "sold"] newA0'
+    (   ( (pfromData oldA0.bought) + (pfromData oldA0.sold) ) #<= 
+        ( (pfromData newA0.bought) + (pfromData newA0.sold) )   )
+
+
 pnewAmmPricesInRange :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
 pnewAmmPricesInRange = plam $ \prices newAmmPrices jumpSizes -> P.do 
     swpp <- pletFields @["bought", "sold"] prices
@@ -45,6 +56,19 @@ pnewAmmPricesInRange = plam $ \prices newAmmPrices jumpSizes -> P.do
     jmps <- pletFields @["bought", "sold"] jumpSizes
     (   ( (pfromData ammp.bought) #< ((pfromData swpp.bought) + (pfromData jmps.bought)) ) #&&
         ( ((pfromData swpp.sold) - (pfromData jmps.sold)) #< (pfromData ammp.sold)       )   )
+
+-- TODO could do this more efficiently, maybe
+pothersUnchanged :: Term s ( PAsset 
+                        :--> PAsset 
+                        :--> PBoughtSold 
+                        :--> PBoughtSold 
+                        :--> V1.PValue 'Sorted 'Positive 
+                        :--> V1.PValue 'Sorted 'Positive 
+                        :--> PBool )
+pothersUnchanged = plam $ \boughtAsset soldAsset oldBalances newBalances oldValue newValue ->
+    ( V1.punionWith # plam (-) # oldValue #$ pboughtSoldValue # boughtAsset # soldAsset # oldBalances ) #==
+    ( V1.punionWith # plam (-) # newValue #$ pboughtSoldValue # boughtAsset # soldAsset # newBalances )
+
 
 pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
 pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do 
@@ -79,8 +103,15 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
     (   ( dirac' #== (pfield @"dirac" # newDirac)                                           ) #&&
         ( ppickedPricesFitDirac # swap.prices # lowestPrices # highestPrices # jumpSizes    ) #&&
         ( pboughtAssetAvailable # swap.prices # oldAmmPrices                                ) #&&
-        ( oldBalances #* swap.prices #<= newBalances #* swap.prices                         ) #&& -- TODO explicit fees?
-        ( pnewAmmPricesInRange # swap.prices # newAmmPrices # jumpSizes                     )   )
+        ( pvalueEquationHolds   # swap.prices # oldBalances # newBalances                   ) #&&
+        ( pnewAmmPricesInRange  # swap.prices # newAmmPrices # jumpSizes                    ) #&&
+        ( pothersUnchanged 
+            # swap.boughtAsset 
+            # swap.soldAsset 
+            # oldBalances 
+            # newBalances 
+            # oldTxO.value 
+            # newTxO.value )  )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do

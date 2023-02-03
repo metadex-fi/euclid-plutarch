@@ -16,7 +16,7 @@ import Plutarch.DataRepr
 import qualified PlutusCore as PLC
 import Plutarch.Unsafe (punsafeBuiltin)
 import qualified Plutarch.Api.V1 as V1
-import Plutarch.Api.V1.Value ( pvalueOf )
+import Plutarch.Api.V1.Value as V1
 import qualified Plutarch.Api.V1.AssocMap as PMap
 import qualified Plutarch.Monadic as P
 import Plutarch.Num
@@ -86,9 +86,9 @@ papplyToBS = phoistAcyclic $ plam $ \f x' y' -> P.do
 
 -- TODO phoistAcyclic below?
 instance PNum PBoughtSold where
-    x #+ y = papplyToBS # (plam $ \x y -> x + y) # x # y
-    x #- y = papplyToBS # (plam $ \x y -> x - y) # x # y
-    x #* y = papplyToBS # (plam $ \x y -> x * y) # x # y
+    x #+ y = papplyToBS # (plam (+)) # x # y
+    x #- y = papplyToBS # (plam (-)) # x # y
+    x #* y = papplyToBS # (plam (*)) # x # y
     pnegate = ptraceError "cannot negate PPositives"
     pabs = plam $ \x -> x
     psignum = plam $ \x -> pmkBoughtSold # 1 # 1
@@ -110,12 +110,20 @@ pdivides = plam $ \x' y' -> P.do
 pvalueOfAsset :: Term s (V1.PValue Sorted Positive :--> PAsset :--> PPositive)
 pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
     asset <- pletFields @["currencySymbol", "tokenName"] asset'
-    ( ptryPositive #$ pvalueOf # value # asset.currencySymbol # asset.tokenName )
+    ( ptryPositive #$ V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
-pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue Sorted Positive :--> PBoughtSold)
+pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue 'Sorted 'Positive :--> PBoughtSold)
 pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
     plet (pvalueOfAsset # value) $ \pofAsset ->
         ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
+
+pboughtSoldValue :: Term s (PAsset :--> PAsset :--> PBoughtSold :--> V1.PValue 'Sorted 'NonZero)
+pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts -> P.do
+    bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
+    sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
+    amnts <- pletFields @["bought", "sold"] boughtSoldAmnts
+    (   ( V1.psingleton # bought.currencySymbol # bought.tokenName # (pto $ pfromData amnts.bought) ) <>
+        ( V1.psingleton # sold.currencySymbol # sold.tokenName # (pto $ pfromData amnts.sold) )        )
 
 newtype PParam (s :: S)
     = PParam
