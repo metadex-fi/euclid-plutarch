@@ -31,25 +31,20 @@ ppickedPricesFitDirac = plam $ \prices lowestPrices highestPrices jumpSizes ->
     ( prices #<= highestPrices ) #&&
     ( pdivides # jumpSizes #$ prices #- lowestPrices ) -- #- implicitly checks lowestPrices #<= prices
 
-pboughtAssetAvailable :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-pboughtAssetAvailable = plam $ \prices weights oldBalances -> P.do 
-    p <- pletFields @["bought", "sold"] prices
-    w <- pletFields @["bought", "sold"] weights
-    b <- pletFields @["bought", "sold"] oldBalances
-    (   ( (pfromData p.sold)   * (pfromData w.sold)   * (pfromData b.bought) ) #<= 
-        ( (pfromData p.bought) * (pfromData w.bought) * (pfromData b.sold)   )   )
+pboughtAssetAvailable :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
+pboughtAssetAvailable = plam $ \prices oldAmmPrices -> P.do 
+    swpp <- pletFields @["bought", "sold"] prices
+    ammp <- pletFields @["bought", "sold"] oldAmmPrices
+    (   ( (pfromData swpp.sold)   * (pfromData ammp.bought) ) #<= 
+        ( (pfromData swpp.bought) * (pfromData ammp.sold)   )   )
 
-pnewAmmPricesInRange :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-pnewAmmPricesInRange = plam $ \prices weights newBalances jumpSizes -> P.do 
-    p <- pletFields @["bought", "sold"] prices
-    w <- pletFields @["bought", "sold"] weights
-    b <- pletFields @["bought", "sold"] newBalances
-    j <- pletFields @["bought", "sold"] jumpSizes
-    let newBoughtAmmPrice   = (pfromData b.bought) * (pfromData w.sold)
-        newSoldAmmPrice     = (pfromData b.sold)   * (pfromData w.bought)
-    (   ( newBoughtAmmPrice #< ((pfromData p.bought) + (pfromData j.bought)) ) #&&
-        ( ((pfromData p.sold) - (pfromData j.sold)) #< newSoldAmmPrice       )   )
-
+pnewAmmPricesInRange :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+pnewAmmPricesInRange = plam $ \prices newAmmPrices jumpSizes -> P.do 
+    swpp <- pletFields @["bought", "sold"] prices
+    ammp <- pletFields @["bought", "sold"] newAmmPrices
+    jmps <- pletFields @["bought", "sold"] jumpSizes
+    (   ( (pfromData ammp.bought) #< ((pfromData swpp.bought) + (pfromData jmps.bought)) ) #&&
+        ( ((pfromData swpp.sold) - (pfromData jmps.sold)) #< (pfromData ammp.sold)       )   )
 
 pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
 pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do 
@@ -78,12 +73,14 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         jumpSizes       = pof # param.jumpSizes
         highestPrices   = pof # param.highestPrices
         lowestPrices    = pof # dirac.lowestPrices
+        oldAmmPrices    = oldBalances #* weights
+        newAmmPrices    = newBalances #* weights
 
     (   ( dirac' #== (pfield @"dirac" # newDirac)                                           ) #&&
         ( ppickedPricesFitDirac # swap.prices # lowestPrices # highestPrices # jumpSizes    ) #&&
-        ( pboughtAssetAvailable # swap.prices # weights # oldBalances                       ) #&&
+        ( pboughtAssetAvailable # swap.prices # oldAmmPrices                                ) #&&
         ( oldBalances #* swap.prices #<= newBalances #* swap.prices                         ) #&& -- TODO explicit fees?
-        ( pnewAmmPricesInRange # swap.prices # weights # newBalances # jumpSizes            )   )
+        ( pnewAmmPricesInRange # swap.prices # newAmmPrices # jumpSizes                     )   )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do

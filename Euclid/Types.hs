@@ -125,7 +125,7 @@ newtype PParam (s :: S)
                 '[ "owner" ':= V1.PPubKeyHash
                 , "jumpSizes" ':= V1.PValue Sorted Positive 
                 , "highestPrices" ':= V1.PValue Sorted Positive   
-                , "weights" ':= V1.PValue Sorted Positive
+                , "weights" ':= V1.PValue Sorted Positive -- actually inverted weights in the AMM-view
                 ]
             )
         )
