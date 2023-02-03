@@ -57,7 +57,8 @@ import Evaluate
 import Experiments
 -- import ExperimentsMap
 import Euclid.Types 
-import Euclid.Dirac
+import Euclid.Validator
+import Euclid.Minting
 
 main :: IO ()
 main = exportMain builders
