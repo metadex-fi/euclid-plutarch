@@ -1,8 +1,6 @@
 -- {-# LANGUAGE AllowAmbiguousTypes #-} -- TODO added blindly, verify later
 -- {-# LANGUAGE ScopedTypeVariables #-} -- TODO does this do anything?
 {-# LANGUAGE RoleAnnotations #-}
-{-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 
 module Euclid.Types where
 
@@ -16,11 +14,12 @@ import Plutarch.DataRepr
 import qualified PlutusCore as PLC
 import Plutarch.Unsafe (punsafeBuiltin)
 import qualified Plutarch.Api.V1 as V1
-import Plutarch.Api.V1.Value ( pvalueOf )
 import qualified Plutarch.Api.V1.AssocMap as PMap
 import qualified Plutarch.Monadic as P
 import Plutarch.Num
 import Plutarch.Maybe
+
+import Euclid.Value
 
 newtype PAsset (s :: S)
     = PAsset
@@ -35,6 +34,7 @@ newtype PAsset (s :: S)
     deriving stock (Generic)
     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PPartialOrd, POrd, PShow)
 instance DerivePlutusType PAsset where type DPTStrat _ = PlutusTypeData
+
 instance PTryFrom PData PAsset
 instance PTryFrom PData (PAsData PAsset)
 
@@ -54,67 +54,36 @@ newtype PIdNFT (s :: S) = PIdNFT (Term s PAsset)
     deriving stock (Generic)
     deriving anyclass (PlutusType, PIsData, PEq, PPartialOrd, POrd, PShow)
 instance DerivePlutusType PIdNFT where type DPTStrat _ = PlutusTypeNewtype
+
 instance PTryFrom PData PIdNFT
 
-newtype PBoughtSold (s :: S)
-    = PBoughtSold
-        ( Term
-            s
-            ( PDataRecord
-                '[ "bought" ':= PPositive
-                , "sold" ':= PPositive
-                ]
-            )
-        )
+newtype PJumpSizes (s :: S) = PJumpSizes (Term s (V1.PValue Sorted Positive))
     deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PPartialOrd, POrd, PShow)
-instance DerivePlutusType PBoughtSold where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData PBoughtSold
-instance PTryFrom PData (PAsData PBoughtSold)
+    deriving anyclass (PlutusType, PIsData, PEq, PShow)
+instance DerivePlutusType PJumpSizes where type DPTStrat _ = PlutusTypeNewtype
 
-pmkBoughtSold :: Term s (PPositive :--> PPositive :--> PBoughtSold)
-pmkBoughtSold = phoistAcyclic $ plam $ \bought sold -> pcon $ PBoughtSold $ 
-        pdcons @"bought" @PPositive # (pdata bought) 
-    #$  pdcons @"sold"   @PPositive # (pdata sold) 
-    #   pdnil
+instance PTryFrom PData (PAsData PJumpSizes)
 
-papplyToBS :: Term s ((PPositive :--> PPositive :--> PPositive) :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold)
-papplyToBS = phoistAcyclic $ plam $ \f x' y' -> P.do 
-    x <- pletFields @["bought", "sold"] x'
-    y <- pletFields @["bought", "sold"] y'
-    ( pmkBoughtSold # (f # x.bought # y.bought) #$ f # x.sold # y.sold )
+-- TODO make phantom type (asset)
+newtype PAmount (s :: S) = PAmount (Term s PPositive)
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PEq, PPartialOrd, POrd, PNum, PFractional, PShow)
+instance DerivePlutusType PAmount where type DPTStrat _ = PlutusTypeNewtype
 
--- TODO phoistAcyclic below?
-instance PNum PBoughtSold where
-    x #+ y = papplyToBS # (plam $ \x y -> x + y) # x # y
-    x #- y = papplyToBS # (plam $ \x y -> x - y) # x # y
-    x #* y = papplyToBS # (plam $ \x y -> x * y) # x # y
-    pnegate = ptraceError "cannot negate PPositives"
-    pabs = plam $ \x -> x
-    psignum = plam $ \x -> pmkBoughtSold # 1 # 1
-    pfromInteger x = ptraceError "should not create PBoughtSold from a single Integer"
+instance PTryFrom PData (PAsData PAmount)
 
-instance PIntegral PBoughtSold where
-  pdiv = papplyToBS # pdiv
-  pmod = papplyToBS # pmod
-  pquot = papplyToBS # pquot
-  prem = papplyToBS # prem
+newtype PAmounts (s :: S) = PAmounts (Term s (V1.PValue Sorted Positive))
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PEq, PShow)
+instance DerivePlutusType PAmounts where type DPTStrat _ = PlutusTypeNewtype
 
-pvalueOfAsset :: Term s (V1.PValue Sorted Positive :--> PAsset :--> PPositive)
-pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
-    asset <- pletFields @["currencySymbol", "tokenName"] asset'
-    ( ptryPositive #$ pvalueOf # value # asset.currencySymbol # asset.tokenName )
+instance PTryFrom PData (PAsData PAmounts)
 
-pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue Sorted Positive :--> PBoughtSold)
-pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
-    plet (pvalueOfAsset # value) $ \pofAsset ->
-        ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
-
-zeroBS :: Term s PBoughtSold
-zeroBS = pcon $ PBoughtSold $ 
-        pdcons @"bought" @PPositive # (pdata 0) 
-    #$  pdcons @"sold"   @PPositive # (pdata 0) 
-    #   pdnil
+-- TODO make phantom type (asset & pot. denominator asset)
+newtype PPrice (s :: S) = PPrice (Term s PPositive)
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PEq, PPartialOrd, POrd, PNum, PFractional, PShow)
+instance DerivePlutusType PPrice where type DPTStrat _ = PlutusTypeNewtype
 
 newtype PParam (s :: S)
     = PParam
@@ -122,9 +91,12 @@ newtype PParam (s :: S)
             s
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
-                , "jumpSizes" ':= V1.PValue Sorted Positive 
-                , "highestPrices" ':= V1.PValue Sorted Positive   
-                , "weights" ':= V1.PValue Sorted Positive
+                , "jumpSizes" ':= PJumpSizes 
+                , "initialPrices" ':= PPrices -- for deducing the default active asset
+                , "lowerPriceBounds" ':= PPrices   
+                , "upperPriceBounds" ':= PPrices   
+                , "baseAmountA0" ':= PAmount -- for deducing the default amounts 
+                -- , "minJumpFlipA0" ':= PAmount -- for limiting abusive jumps TODO later
                 ]
             )
         )
@@ -132,9 +104,23 @@ newtype PParam (s :: S)
     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
 instance DerivePlutusType PParam
     where type DPTStrat _ = PlutusTypeData
+
 instance PTryFrom PData (PAsData PParam)
 instance PTryFrom PData PParam
+    
+-- | pre-jump storage of active asset at that time, for reactivation.
+-- TODO consider instead mapping simply to an index of the asset-list later
+-- TODO PPrices as keys could also be compressed, but leave it for now for correctness purposes
+type role PActiveAssets nominal -- TODO reconsider the role thing here and everywhere else
+newtype PActiveAssets (s :: S)
+  = PActiveAssets (Term s (V1.PMap Sorted PPrices PAsset)) -- TODO reconsider Sorted vs. Unsorted here
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PIsData, PShow)
+instance DerivePlutusType PActiveAssets where type DPTStrat _ = PlutusTypeNewtype
 
+instance PTryFrom PData (PAsData PActiveAssets)
+
+    -- - pre-jump active asset storage: (p2,...,pN) -> asset or p2 -> ... -> pN -> asset
 newtype PDirac (s :: S)
     = PDirac
         ( Term
@@ -143,7 +129,9 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT -- TODO implement the NFT-mechanics around this later
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "lowestPrices" ':= V1.PValue Sorted Positive
+                , "prices" ':= PPrices
+                , "activeAmnts" ':= PAmounts
+                , "jumpStorage" ':= PActiveAssets -- (p2,...,pN) -> asset or p2 -> ... -> pN -> asset
                 ]
             )
         )
@@ -151,42 +139,30 @@ newtype PDirac (s :: S)
     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
 instance DerivePlutusType PDirac
     where type DPTStrat _ = PlutusTypeData
+
 instance PTryFrom PData (PAsData PDirac)
 instance PTryFrom PData PDirac
 
 data PEuclidDatum (s :: S)
-  = PDiracDatum (Term s (PDataRecord '["dirac" ':= PDirac]))
-  | PParamDatum (Term s (PDataRecord '["param" ':= PParam]))
+  = PDiracDatum (Term s (PDataRecord '["_0" ':= PDirac]))
+  | PParamDatum (Term s (PDataRecord '["_0" ':= PParam]))
+
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PEq, PShow)
+
 instance DerivePlutusType PEuclidDatum where type DPTStrat _ = PlutusTypeData
+
 instance PTryFrom PData PEuclidDatum
 instance PTryFrom PData (PAsData PEuclidDatum)
 
-
-newtype PSwap (s :: S)
-    = PSwap
-        ( Term
-            s
-            ( PDataRecord
-                '["boughtAsset" ':= PAsset
-                ,"soldAsset" ':= PAsset
-                ,"prices" ':= PBoughtSold
-                ]
-            )
-        )
-    deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
-instance DerivePlutusType PSwap
-    where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData (PAsData PSwap)
-instance PTryFrom PData PSwap
-
 -- | redeemer.
 data PEuclidAction (s :: S)
-    = PSwapRedeemer (Term s (PDataRecord '["swap" ':= PSwap]))
-    | PAdminRedeemer (Term s (PDataRecord '[]))
+    = PAdmin (Term s (PDataRecord '[]))
+    | PFlip (Term s (PDataRecord '[]))
+    | PJump (Term s (PDataRecord '[]))
     deriving stock (Generic)
     deriving anyclass (PlutusType, PIsData, PShow)
 instance DerivePlutusType PEuclidAction where type DPTStrat _ = PlutusTypeData
+
+
 instance PTryFrom PData PEuclidAction

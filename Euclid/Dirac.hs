@@ -25,324 +25,70 @@ import Plutarch.Maybe
 
 import Euclid.Utils
 import Euclid.Types
-import Euclid.Value
 
-popenDirac :: Term s PBool
-popenDirac = pconstant True
+ppickedPricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+ppickedPricesFitDirac = plam $ \prices lowestPrices highestPrices jumpSizes ->
+    ( prices #<= highestPrices ) #&&
+    ( prem # (prices #- lowestPrices) # jumpSizes #== zeroBS) -- #- implicitly checks lowestPrices #<= prices
 
-pcloseDirac :: Term s PBool
-pcloseDirac = pconstant True
+pboughtAssetAvailable :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+pboughtAssetAvailable = plam $ \prices weights oldBalances -> P.do 
+    p <- pletFields @["bought", "sold"] prices
+    w <- pletFields @["bought", "sold"] weights
+    b <- pletFields @["bought", "sold"] oldBalances
+    (   ( (pfromData p.sold)   * (pfromData w.sold)   * (pfromData b.bought) ) #<= 
+        ( (pfromData p.bought) * (pfromData w.bought) * (pfromData b.sold)   )   )
 
-pfstBuiltinData :: PIsData a => Term s (PBuiltinPair (PAsData a) b :--> a)
-pfstBuiltinData = phoistAcyclic $ plam $ \pair -> pfromData $ pfstBuiltin # pair
-
-psndBuiltinData :: PIsData b => Term s (PBuiltinPair a (PAsData b) :--> b)
-psndBuiltinData = phoistAcyclic $ plam $ \pair -> pfromData $ psndBuiltin # pair
-
--- | sum the equivalent amounts of the tokens in first asset
-pSumEquivalentA0' :: Term s (PPrices :--> V1.PCurrencySymbol :--> (AssocMap.PMap keys V1.PTokenName PInteger) :--> PInteger)
-pSumEquivalentA0' = plam $ \prices ccy tknAmnts -> 
-    pfoldr
-        # (plam $ \pair acc -> (ppriceOf # prices # ccy #$ pfstBuiltinData # pair) * (psndBuiltinData # pair) + acc)
-        # 0 
-        # (pto tknAmnts)
-
--- | sum the equivalent amounts of the assets in first asset
-psumEquivalentA0 :: Term s (PPrices :--> (V1.PValue a b) :--> PInteger)
-psumEquivalentA0 = phoistAcyclic $ plam $ \prices val ->
-    pfoldr 
-        # (plam $ \pair acc -> (pSumEquivalentA0' # prices # (pfstBuiltinData # pair) #$ psndBuiltinData # pair) + acc) 
-        # 0 
-        # (pto $ pto val) -- get the list of pairs of CurrencySymbols and Maps from TokenNames to Amounts
+pnewAmmPricesInRange :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+pnewAmmPricesInRange = plam $ \prices weights newBalances jumpSizes -> P.do 
+    p <- pletFields @["bought", "sold"] prices
+    w <- pletFields @["bought", "sold"] weights
+    b <- pletFields @["bought", "sold"] newBalances
+    j <- pletFields @["bought", "sold"] jumpSizes
+    let newBoughtAmmPrice   = (pfromData b.bought) * (pfromData w.sold)
+        newSoldAmmPrice     = (pfromData b.sold)   * (pfromData w.bought)
+    (   ( newBoughtAmmPrice #< ((pfromData p.bought) + (pfromData j.bought)) ) #&&
+        ( ((pfromData p.sold) - (pfromData j.sold)) #< newSoldAmmPrice       )   )
 
 
-pflipDirac :: Term s    
-                (       V1.PValue 'Sorted 'Positive 
-                :-->    V1.PValue 'Sorted 'Positive
-                :-->    PAmounts
-                :-->    PAmounts
-                :-->    PPrices
-                :-->    PBool
-                )
-pflipDirac = plam $ \oldVal newVal oldAmnt newAmnt prices -> P.do
-    let valDiff = pvalSub # newVal # oldVal -- TODO vs. plets
-        amntDiff = pvalSub # (pto newAmnt) # (pto oldAmnt)
-        diffA0equiv = psumEquivalentA0 # prices # valDiff
-
-    (valDiff #== amntDiff) #&& (0 #<= diffA0equiv) -- TODO add fees here
-
-{-
-core thought:
-- we can divide the full tensor by initial-price-tensors of one less dimension
-- either we are in a fully filled sub-tensor (1)
-- or we are in one that's split up by some kind of diagonal thing (2)
-- intuition: (1) is the case always except when all current prices are above initial prices
-- the diagonal in (2) can be deduced by ???
-
-alternative approach:
-- just calculate which asset would be the "smartest" to have active here
-- i.e. by
-    - stepping through each non-first asset; for each
-        - compare current price to initial price
-            - if higher: consider it valid
-            - if not: invalid
-    - if no result: return first asset
-    - if exactly one result: return that
-    - if more than one result: 
-        - pick one of them as new "first asset"
-        - calculate prices of the others in that first one
-        - recurse
-
-design considerations:
-- subtraction is useful, but does not check asset-alignment
-- lookups each time seems costly
---> maybe first check alignment once via i.e. checkBinRel with a check that both are nonzero
-
-implementation:
-- (somewhere check asset alignmment once) <- TODO
-- for one recursion:
-    - punionWith a custom subtraction which zeroes negative values
-    - pnormalize (TODO later those two could be combined into one step for constant gains)
-    - check if zero, one or many results
-    - branch accordingly
--}
-pdefaultActiveAsset :: Term s (PPrices :--> PPrices :--> PAsset)
-pdefaultActiveAsset = phoistAcyclic $ plam $ \initPs currentPs ->
-     pfromData $ 
-        f # (V1.pforgetPositive $ pto initPs) # (V1.pforgetPositive $ pto currentPs)
-
-    where 
-        f :: Term s (V1.PValue 'Sorted V1.NonZero :--> V1.PValue 'Sorted V1.NonZero :--> PAsData PAsset)
-        f = pfix #$ plam f'
-
-        f' :: Term s (V1.PValue 'Sorted V1.NonZero :--> V1.PValue 'Sorted V1.NonZero :--> PAsData PAsset)
-            -> Term s (V1.PValue 'Sorted V1.NonZero)
-            -> Term s (V1.PValue 'Sorted V1.NonZero)
-            -> Term s (PAsData PAsset)
-        f' self initPs currentPs = P.do -- TODO vs. plets
-            -- "normalize" prices to have same first-asset-price by taking the tails (anticipating 
-            -- the diff and preparing for recursion), then multiplying with other's first asset price
-            let initPsNorm = punsafeValScale # (ptailVal # initPs) #$ pfirstAmnt # currentPs
-                currentPsNorm = punsafeValScale # (ptailVal # currentPs) #$ pfirstAmnt # initPs
-                diff = pposSub # initPsNorm # currentPsNorm -- check which prices are larger than init
-            pif 
-                (pnullVal # diff)
-                (pfirstAsset # initPs) -- if none: return denominator-asset
-                (pif 
-                    (punaryVal # diff)
-                    (pfirstAsset # diff) -- if one: return that (TODO consider omitting this branch)
-                    (self # initPsNorm # currentPsNorm) -- if more than one - recurse
-                )
-
-        -- | subtract & remove negative amounts (Integers)
-        pposSub' :: Term s (PInteger :--> PInteger :--> PInteger)
-        pposSub' = phoistAcyclic $ plam $ \x y -> 
-            pif (x #< y)
-                (y - x)
-                0
-
-        -- | subtract & remove negative amounts (Values)
-        pposSub :: Term s (V1.PValue 'Sorted 'V1.NonZero :--> V1.PValue 'Sorted V1.NonZero :--> V1.PValue 'Sorted V1.NonZero)
-        pposSub = phoistAcyclic $ plam $ \x y -> 
-            V1.pnormalize #$
-                V1.punionWith
-                    # pposSub'
-                    # x
-                    # y
-
--- those arguments feel safer than just handing over the records. Also less ugly.
-pjumpDirac :: forall s. Term s ( PParam 
-                            :--> PPrices 
-                            :--> PPrices 
-                            :--> PAmounts 
-                            :--> PAmounts 
-                            :--> V1.PValue 'V1.Sorted 'V1.Positive 
-                            :--> V1.PValue 'V1.Sorted 'V1.Positive 
-                            :--> PActiveAssets 
-                            :--> PActiveAssets 
-                            :--> PBool )
-pjumpDirac = plam $ \   refDat 
-                        oldPrices 
-                        newPrices 
-                        oldAmnts 
-                        newAmnts 
-                        oldVal 
-                        newVal 
-                        oldStorage 
-                        newStorage -> P.do 
-    ref <- pletFields @[ "jumpSizes"
-                        , "initialPrices"
-                        , "lowerPriceBounds"
-                        , "upperPriceBounds"
-                        , "baseAmountA0"
-                        -- , "minJumpFlipA0"
-                        ] refDat
-
-    -- three stages: pre-Jump ("old") --> post-Jump-pre-Flip ("mid") --> post-Flip ("new")
-    let initPrices = ref.initialPrices
-        oldActiveAsset = pfromData $ pfirstAsset #$ V1.pforgetPositive $ pto oldAmnts
-        midActiveAsset = getMidActiveAsset # initPrices # newPrices # oldStorage
-        midAmnts = calcMidAmnts # midActiveAsset # newPrices # ref.baseAmountA0
-
-    -- check 
-    --  that jump size is correct & no assets added or removed to the price list
-    (   ( jumpSizeCorrect # oldPrices # newPrices # ref.jumpSizes ) #&&
-    --  that the jump lands within the ranges
-        ( withinRanges # newPrices # ref.lowerPriceBounds # ref.upperPriceBounds ) #&&
-    --  that there is only one active asset pre-jump (TODO later: option to pre-jump flip if not so)
-        ( oneActiveAssetPreJump # oldAmnts ) #&&
-    --      if it's different than default: that it's added to the storage correctly
-    --  if jump-target is in storage:
-    --      if so:
-    --          that active asset is loaded correctly from there --> getMidActiveAsset
-    --          that it's deleted correctly 
-        (storageChecks # oldStorage # newStorage # oldActiveAsset # initPrices # oldPrices # newPrices ) #&&
-    --  that pre-flip active amounts are generated correctly from active asset, prices, default amount
-    --  --> not a check but computation
-    --  that minimum amount is flipped TODO later
-        -- (minAmntFlipped ) #&&
-    --  flip check
-        ( pflipDirac # oldVal # newVal # midAmnts # newAmnts # newPrices ) 
-        )
-
-    -- assert things that are stored tagged as sorted are actually sorted:
-    --      prices in newPrices = passertPricesSortedPositive # newDat.prices
-    --      amnts in newAmnts = passertAmntsSortedPositive # newDat.activeAmnts
-    --      jumpStorage implicitly in storageChecks
-    
-    where 
-        -- | check that all non-zero diffs in prices are a multiple of the resp. jump size
-        jumpSizeCorrect :: Term s (PPrices :--> PPrices :--> PJumpSizes :--> PBool)
-        jumpSizeCorrect = plam $ \oldPrices newPrices jumpSizes -> 
-            V1.pcheckBinRel  -- if there is addition or removal of a price: div by zero (error desired)
-                # (plam $ \js pd -> (pmod # pd # js) #== 0) -- TODO try prem for performance later
-                # (pto jumpSizes) 
-                #$ V1.punionWith # (plam (-)) # (pto newPrices) # (pto oldPrices) -- sign is irrelevant here
-
-        withinRanges :: Term s (PPrices :--> PPrices :--> PPrices :--> PBool)
-        withinRanges = plam $ \newPrices lowerBounds upperBounds -> 
-            -- lower bounds noninclusive to allow not storing zeroes, yet still getting a nonzero price check
-            ((pto lowerBounds) #< (pto newPrices)) #&& ((pto newPrices) #< (pto upperBounds))
-
-
-        oneActiveAssetPreJump :: Term s (PAmounts :--> PBool)
-        oneActiveAssetPreJump = plam $ \amnts -> punaryVal #$ V1.pforgetPositive $ pto amnts
-
-        -- checks that loaded asset is deleted, and old active asset is stored, unless it's the default
-        -- TODO consider making the Maps work with AsData's here instead
-        storageChecks :: Term s (PActiveAssets :--> PActiveAssets :--> PAsset :--> PPrices :--> PPrices :--> PPrices :--> PBool)
-        storageChecks = plam $ \oldStorage newStorage oldActiveAsset initPrices oldPrices newPrices -> 
-            (pto $ newStorage) #==
-                ( AssocMap.pdelete # newPrices #$ -- TODO double-check later that deletion works correctly if key is not in Map
-                     (pif 
-                        ( oldActiveAsset #== (pdefaultActiveAsset # initPrices # oldPrices) )
-                        ( pto $ oldStorage )
-                        ( AssocMap.pinsert # oldPrices # oldActiveAsset #$ pto $ oldStorage )
-                    )
-                )
-
-        -- | simply divide A0's base amount by price of active asset & pack up
-        calcMidAmnts :: Term s (PAsset :--> PPrices :--> PAmount :--> PAmounts)
-        calcMidAmnts = plam $ \activeAsset' prices baseAmountA0 -> P.do 
-            activeAsset <- pletFields @["currencySymbol", "tokenName"] activeAsset'
-            pcon $ PAmounts $ 
-                V1.passertPositive #$ -- TODO later optimize here
-                    V1.psingleton 
-                    # activeAsset.currencySymbol
-                    # activeAsset.tokenName
-                    #$ pdiv 
-                        # (pto $ pto baseAmountA0)
-                        #$ ppriceOf # prices # activeAsset.currencySymbol # activeAsset.tokenName
-            
-        -- if it's in the jump storage, get it from there, otherwise calculate default
-        getMidActiveAsset :: Term s (PPrices :--> PPrices :--> PActiveAssets :--> PAsset)
-        getMidActiveAsset = plam $ \initialPrices newPrices oldStorage ->
-            pmatch (AssocMap.plookup # newPrices # (pto oldStorage)) $ \case 
-                PJust storedActiveAsset -> storedActiveAsset
-                PNothing -> pdefaultActiveAsset # initialPrices # newPrices
-
-
-        -- minAmntFlipped ::
-        -- minAmntFlipped = 
-
-
--- padminRef :: Term s (PData :--> PScriptContext :--> PBool)
--- padminRef = plam $ \dat' ctx -> P.do
---     let signer = phead #$ pfromData $ pfield @"signatories" #$ pfield @"txInfo" # ctx
---         dat = (flip (ptryFrom @PReferenceDatum) fst) dat'
---         owner = pfield @"owner" # dat
---     (signer #== owner)
-        
--- -- TODO something about this just being a copy of padminRef with the @P*Datum changed. i.e. merge the datum types into sum type
--- padminDirac :: Term s (PData :--> PScriptContext :--> PBool)
--- padminDirac = plam $ \dat' ctx -> P.do
---     let signer = phead #$ pfromData $ pfield @"signatories" #$ pfield @"txInfo" # ctx
---         dat = (flip (ptryFrom @PDiracDatum) fst) dat'
---         owner = pfield @"owner" # dat
---     (signer #== owner)
-
--- TODO check everything else stays the same, no minting, no changes to the ref etc. Also staking-wdrwls and delegations
-pswap :: Term s (PDirac :--> PEuclidAction :--> PScriptContext :--> PBool) -- ClosedTerm PValidator
-pswap = phoistAcyclic $ plam $ \dat red ctx -> P.do 
+pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
+pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do 
     info <- pletFields @["inputs", "referenceInputs", "outputs", "mint"] 
             $ pfield @"txInfo" # ctx
 
-    oldDat <- pletFields @["owner", "threadNFT", "paramNFT", "prices", "activeAmnts", "jumpStorage"] dat
+    dirac <- pletFields @["owner", "threadNFT", "paramNFT", "lowestPrices"] dirac'
         
-    let oldTxO = pfromJust #$ pfind # (poutHasNFT # oldDat.threadNFT) # info.outputs
-        newTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # oldDat.threadNFT) # info.inputs 
+    let oldTxO' = pfromJust #$ pfind # (poutHasNFT # dirac.threadNFT) # info.outputs
+        newTxO' = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.threadNFT) # info.inputs 
+        refTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.paramNFT) # info.referenceInputs 
 
-    old <- pletFields @["address", "value"] oldTxO
-    new <- pletFields @["address", "value", "datum"] newTxO
+    oldTxO <- pletFields @["address", "value"] oldTxO'
+    newTxO <- pletFields @["address", "value", "datum"] newTxO'
 
-    PDiracDatum newDat' <- pmatch $ punpackEuclidDatum # new.datum
-    newDat <- pletFields @["owner", "threadNFT", "paramNFT", "prices", "activeAmnts", "jumpStorage"] $ pfield @"_0" # newDat'
+    PDiracDatum newDirac <- pmatch $ punpackEuclidDatum # newTxO.datum
+    PParamDatum param' <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
+    param <- pletFields @["jumpSizes", "highestPrices", "weights"] $ pfield @"param" # param'
+    swap <- pletFields @["boughtAsset", "soldAsset", "prices"] swap'
 
-    let oldAmnts = oldDat.activeAmnts 
-        newAmnts = passertAmntsSortedPositive # newDat.activeAmnts
+    let pof             = pboughtSoldOf # swap.boughtAsset # swap.soldAsset -- TODO vs. plets
+        
+        oldBalances     = pof # oldTxO.value
+        newBalances     = pof # newTxO.value
+        weights         = pof # param.weights
+        jumpSizes       = pof # param.jumpSizes
+        highestPrices   = pof # param.highestPrices
+        lowestPrices    = pof # dirac.lowestPrices
 
-    (   ( oldDat.owner          #== newDat.owner        ) #&&
-        ( oldDat.threadNFT      #== newDat.threadNFT    ) #&&
-        ( oldDat.paramNFT       #== newDat.paramNFT     ) #&&
-        ( old.address           #== new.address         ) #&&
-
-        ( pmatch red $ \case 
-            PFlip _ -> 
-                ( oldDat.prices         #== newDat.prices       ) #&&
-                ( oldDat.jumpStorage    #== newDat.jumpStorage  ) #&&
-
-                ( pflipDirac 
-                    # old.value 
-                    # new.value 
-                    # oldAmnts 
-                    # newAmnts 
-                    # oldDat.prices
-                ) 
-
-            PJump _ -> P.do 
-                let newPrices = passertPricesSortedPositive # newDat.prices
-                
-                    refTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # oldDat.paramNFT) # info.referenceInputs 
-                PParamDatum refDat <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
-                ( pjumpDirac
-                    # (pfield @"_0" # refDat) 
-                    # oldDat.prices
-                    # newPrices
-                    # oldAmnts
-                    # newAmnts
-                    # old.value
-                    # new.value
-                    # oldDat.jumpStorage
-                    # newDat.jumpStorage
-                    )
-            _ -> ptraceError "unknown action/redeemer" 
-            ))
+    (   ( dirac' #== (pfield @"dirac" # newDirac)                                           ) #&&
+        ( ppickedPricesFitDirac # swap.prices # lowestPrices # highestPrices # jumpSizes    ) #&&
+        ( pboughtAssetAvailable # swap.prices # weights # oldBalances                       ) #&&
+        ( oldBalances #* swap.prices #<= newBalances #* swap.prices                         ) #&& -- TODO explicit fees?
+        ( pnewAmmPricesInRange # swap.prices # weights # newBalances # jumpSizes            )   )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do
     let signer = phead #$ pfromData $ pfield @"signatories" #$ pfield @"txInfo" # ctx
     (signer #== owner)
-
 
 peuclidValidator :: ClosedTerm PValidator
 peuclidValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do 
@@ -350,20 +96,20 @@ peuclidValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do
         pass = (pmatch dat $ \case 
             PParamDatum param -> 
                 padmin 
-                # (pfield @"owner" #$ pfield @"_0" # param)
+                # (pfield @"owner" #$ pfield @"param" # param)
                 # ctx
 
             PDiracDatum dirac' -> P.do
                 let red = (flip (ptryFrom @PEuclidAction) fst) red'
-                let dirac = pfield @"_0" #$ dirac'
+                let dirac = pfield @"dirac" #$ dirac'
                 pmatch red $ \case 
-                    PAdmin _ ->
+                    PAdminRedeemer _ ->
                         padmin 
                         # (pfield @"owner" # dirac)
                         # ctx
-                    _ -> pswap # dirac # red # ctx
-            )
-          
+                    PSwapRedeemer swap -> pswap # dirac # (pfield @"swap" # swap) # ctx
+                    _ -> ( ptraceError "unknown redeemer" )
+            ) 
     pif 
         pass 
         ( popaque $ pcon PUnit )

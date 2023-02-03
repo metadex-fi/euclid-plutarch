@@ -79,12 +79,11 @@ ptailVal = phoistAcyclic $ plam $ \val ->
             PNil -> ptraceError "no currencies"
 
 
--- | Prices of each non-first asset denominated in first one. Also listing the first one here
+-- | Prices of each non-first asset denominated in some assumed, non-listed base currency.
 newtype PPrices (s :: S) = PPrices (Term s (V1.PValue Sorted Positive))
     deriving stock (Generic)
     deriving anyclass (PlutusType, PIsData, POrd, PEq, PShow)
 instance DerivePlutusType PPrices where type DPTStrat _ = PlutusTypeNewtype
-
 instance PTryFrom PData (PAsData PPrices)
 
 -- | helper for instance PPartialOrd PPrices

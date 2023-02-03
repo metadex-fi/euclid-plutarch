@@ -21,26 +21,14 @@ import Plutarch.Maybe
 import Plutarch.Api.V1.Value qualified as V1
 
 import Euclid.Types
-import Euclid.Value
+-- import Euclid.Value
 
-pfirstAsset :: Term s (V1.PValue 'Sorted 'V1.NonZero :--> (PAsData PAsset))
-pfirstAsset = phoistAcyclic $ plam $ \val -> 
-    plet (pfirstKVPair # (pto val)) $ \fstPair ->
-        mkAssetData 
-            (pfstBuiltin # fstPair)
-            (pfstBuiltin #$ pfirstKVPair #$ pfromData $ psndBuiltin # fstPair)
-
-punpackDatum :: (PTryFrom PData (PAsData a), PIsData a) => Term s (POutputDatum :--> a)
-punpackDatum = phoistAcyclic $ plam $ \datum0 ->
-    pmatch datum0 $ \case 
-        POutputDatum outputDatumRecord -> P.do
-            let datum1  = pfield @"outputDatum" # outputDatumRecord
-                datum2  = pfromData datum1
-                datum3  = pto datum2
-                datum4 = (flip ptryFrom fst) datum3 -- TODO important a) check that it works b) handle what happens if mismatch. Not sure at all this is correct
-                datum5 = pfromData datum4
-            datum5
-        _ -> ptraceError "error unpacking datum"
+-- pfirstAsset :: Term s (V1.PValue 'Sorted 'V1.NonZero :--> (PAsData PAsset))
+-- pfirstAsset = phoistAcyclic $ plam $ \val -> 
+--     plet (pfirstKVPair # (pto val)) $ \fstPair ->
+--         mkAssetData 
+--             (pfstBuiltin # fstPair)
+--             (pfstBuiltin #$ pfirstKVPair #$ pfromData $ psndBuiltin # fstPair)
 
 punpackEuclidDatum :: Term s (POutputDatum :--> PEuclidDatum)
 punpackEuclidDatum = phoistAcyclic $ plam $ \datum0 ->
@@ -54,41 +42,41 @@ punpackEuclidDatum = phoistAcyclic $ plam $ \datum0 ->
             datum5
         _ -> ptraceError "error unpacking datum"
 
-pinsecWith :: 
-    Term
-        s
-        ( (PInteger :--> PInteger :--> PInteger)
-            :--> V1.PValue 'Sorted any0
-            :--> V1.PValue 'Sorted any1
-            :--> V1.PValue 'Sorted 'NoGuarantees
-        )
-pinsecWith = phoistAcyclic $
-    plam $ \combine x y ->
-        pcon . V1.PValue $
-        AssocMap.pinsecWith
-            # plam (\x y -> AssocMap.pinsecWith # combine # x # y)
-            # pto x
-            # pto y 
+-- pinsecWith :: 
+--     Term
+--         s
+--         ( (PInteger :--> PInteger :--> PInteger)
+--             :--> V1.PValue 'Sorted any0
+--             :--> V1.PValue 'Sorted any1
+--             :--> V1.PValue 'Sorted 'NoGuarantees
+--         )
+-- pinsecWith = phoistAcyclic $
+--     plam $ \combine x y ->
+--         pcon . V1.PValue $
+--         AssocMap.pinsecWith
+--             # plam (\x y -> AssocMap.pinsecWith # combine # x # y)
+--             # pto x
+--             # pto y 
 
-ppriceOf :: Term s (PPrices :--> V1.PCurrencySymbol :--> V1.PTokenName :--> PInteger)
-ppriceOf = phoistAcyclic $
-  plam $ \prices ccy tkn ->
-    AssocMap.pfoldAt
-      # ccy
-      # ( pconstant 0 ) -- TODO needs to crash if not found, to avoid dust attacks increasing costs 
-      # plam (\m -> AssocMap.pfoldAt # tkn # (pconstant 0) # plam pfromData # pfromData m)
-      # (pto $ pto prices)
+-- ppriceOf :: Term s (PPrices :--> V1.PCurrencySymbol :--> V1.PTokenName :--> PInteger)
+-- ppriceOf = phoistAcyclic $
+--   plam $ \prices ccy tkn ->
+--     AssocMap.pfoldAt
+--       # ccy
+--       # ( pconstant 0 ) -- TODO needs to crash if not found, to avoid dust attacks increasing costs 
+--       # plam (\m -> AssocMap.pfoldAt # tkn # (pconstant 0) # plam pfromData # pfromData m)
+--       # (pto $ pto prices)
 
--- TODO don't technically need the passertPositive here, as that's checked downstream. Revisit later
-passertPricesSortedPositive :: Term s (PPrices :--> PPrices)
-passertPricesSortedPositive = plam $ \prices -> 
-    pcon $ PPrices $ 
-        V1.passertPositive #$ V1.passertSorted #$ pto prices
+-- TODO do we need those passert*SortedPositive?
+-- passertPricesSortedPositive :: Term s (PPrices :--> PPrices)
+-- passertPricesSortedPositive = plam $ \prices -> 
+--     pcon $ PPrices $ 
+--         V1.passertPositive #$ V1.passertSorted #$ pto prices
 
-passertAmntsSortedPositive :: Term s (PAmounts :--> PAmounts)
-passertAmntsSortedPositive = plam $ \amnts -> 
-    pcon $ PAmounts $ 
-        V1.passertPositive #$ V1.passertSorted #$ pto amnts
+-- passertAmntsSortedPositive :: Term s (PAmounts :--> PAmounts)
+-- passertAmntsSortedPositive = plam $ \amnts -> 
+--     pcon $ PAmounts $ 
+--         V1.passertPositive #$ V1.passertSorted #$ pto amnts
 
 poutHasNFT :: Term s (PIdNFT :--> PTxOut :--> PBool)
 poutHasNFT = phoistAcyclic $ plam $ \nft' output -> P.do
