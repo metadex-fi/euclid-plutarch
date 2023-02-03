@@ -26,36 +26,27 @@ import Plutarch.Maybe
 import Euclid.Utils
 import Euclid.Types
 
-ppickedPricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-ppickedPricesFitDirac = plam $ \prices lowestPrices highestPrices jumpSizes ->
-    ( prices #<= highestPrices ) #&&
-    ( pdivides # jumpSizes #$ prices #- lowestPrices ) -- #- implicitly checks lowestPrices #<= prices
+ppricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+ppricesFitDirac = plam $ \swapPrices lowestPrices highestPrices jumpSizes ->
+    ( swapPrices #<= highestPrices ) #&&
+    ( pdivides # jumpSizes #$ swapPrices #- lowestPrices ) -- #- implicitly checks lowestPrices #<= swapPrices
 
-pboughtAssetAvailable :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
-pboughtAssetAvailable = plam $ \prices oldAmmPrices -> P.do 
-    swpp <- pletFields @["bought", "sold"] prices
-    ammp <- pletFields @["bought", "sold"] oldAmmPrices
-    (   ( (pfromData swpp.sold)   * (pfromData ammp.bought) ) #<= 
-        ( (pfromData swpp.bought) * (pfromData ammp.sold)   )   )
+pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
+pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
+    swpp <- pletFields @["bought", "sold"] swapPrices
+    ammp <- pletFields @["bought", "sold"] ammPrices
+    (   ( (pfromData swpp.sold) * (pfromData ammp.bought) ) #<= -- results from ammp <= swpp, with *p := *p.bought / *p.sold
+        ( (pfromData ammp.sold) * (pfromData swpp.bought) )   ) -- ==> ammp.bought / ammp.sold <= swpp.bought / swpp.sold
 
  -- TODO explicit fees?
-pvalueEquationHolds :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-pvalueEquationHolds = plam $ \prices oldBalances newBalances -> P.do
-    let oldA0' = prices * oldBalances
-        newA0' = prices * newBalances
+pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+pvalueEquation = plam $ \swapPrices oldBalances newBalances -> P.do
+    let oldA0' = swapPrices * oldBalances
+        newA0' = swapPrices * newBalances
     oldA0 <- pletFields @["bought", "sold"] oldA0'
     newA0 <- pletFields @["bought", "sold"] newA0'
     (   ( (pfromData oldA0.bought) + (pfromData oldA0.sold) ) #<= 
         ( (pfromData newA0.bought) + (pfromData newA0.sold) )   )
-
-
-pnewAmmPricesInRange :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-pnewAmmPricesInRange = plam $ \prices newAmmPrices jumpSizes -> P.do 
-    swpp <- pletFields @["bought", "sold"] prices
-    ammp <- pletFields @["bought", "sold"] newAmmPrices
-    jmps <- pletFields @["bought", "sold"] jumpSizes
-    (   ( (pfromData ammp.bought) #< ((pfromData swpp.bought) + (pfromData jmps.bought)) ) #&&
-        ( ((pfromData swpp.sold) - (pfromData jmps.sold)) #< (pfromData ammp.sold)       )   )
 
 -- TODO could do this more efficiently, maybe
 pothersUnchanged :: Term s ( PAsset 
@@ -66,8 +57,9 @@ pothersUnchanged :: Term s ( PAsset
                         :--> V1.PValue 'Sorted 'Positive 
                         :--> PBool )
 pothersUnchanged = plam $ \boughtAsset soldAsset oldBalances newBalances oldValue newValue ->
-    ( V1.punionWith # plam (-) # oldValue #$ pboughtSoldValue # boughtAsset # soldAsset # oldBalances ) #==
-    ( V1.punionWith # plam (-) # newValue #$ pboughtSoldValue # boughtAsset # soldAsset # newBalances )
+    plet (pboughtSoldValue # boughtAsset # soldAsset) $ \toValue ->
+        ( V1.punionWith # plam (-) # oldValue #$ toValue # oldBalances ) #==
+        ( V1.punionWith # plam (-) # newValue #$ toValue # newBalances )
 
 
 pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
@@ -90,6 +82,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
     swap <- pletFields @["boughtAsset", "soldAsset", "prices"] swap'
 
     let pof             = pboughtSoldOf # swap.boughtAsset # swap.soldAsset -- TODO vs. plets
+        passetForSale   = pboughtAssetForSale # swap.prices
         
         oldBalances     = pof # oldTxO.value
         newBalances     = pof # newTxO.value
@@ -100,18 +93,17 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         oldAmmPrices    = oldBalances #* weights
         newAmmPrices    = newBalances #* weights
 
-    (   ( dirac' #== (pfield @"dirac" # newDirac)                                           ) #&&
-        ( ppickedPricesFitDirac # swap.prices # lowestPrices # highestPrices # jumpSizes    ) #&&
-        ( pboughtAssetAvailable # swap.prices # oldAmmPrices                                ) #&&
-        ( pvalueEquationHolds   # swap.prices # oldBalances # newBalances                   ) #&&
-        ( pnewAmmPricesInRange  # swap.prices # newAmmPrices # jumpSizes                    ) #&&
-        ( pothersUnchanged 
-            # swap.boughtAsset 
-            # swap.soldAsset 
-            # oldBalances 
-            # newBalances 
-            # oldTxO.value 
-            # newTxO.value )  )
+    (   ( dirac' #== (pfield @"dirac" # newDirac)                                       ) #&&
+        ( ppricesFitDirac   # swap.prices # lowestPrices # highestPrices # jumpSizes    ) #&&
+        ( passetForSale     # oldAmmPrices                                              ) #&&
+        ( passetForSale     # newAmmPrices                                              ) #&&
+        ( pvalueEquation    # swap.prices # oldBalances # newBalances                   ) #&&
+        ( pothersUnchanged  # swap.boughtAsset 
+                            # swap.soldAsset 
+                            # oldBalances 
+                            # newBalances 
+                            # oldTxO.value 
+                            # newTxO.value )  )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do
