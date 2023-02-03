@@ -29,7 +29,7 @@ import Euclid.Types
 ppickedPricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
 ppickedPricesFitDirac = plam $ \prices lowestPrices highestPrices jumpSizes ->
     ( prices #<= highestPrices ) #&&
-    ( prem # (prices #- lowestPrices) # jumpSizes #== zeroBS) -- #- implicitly checks lowestPrices #<= prices
+    ( pdivides # jumpSizes #$ prices #- lowestPrices ) -- #- implicitly checks lowestPrices #<= prices
 
 pboughtAssetAvailable :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
 pboughtAssetAvailable = plam $ \prices weights oldBalances -> P.do 

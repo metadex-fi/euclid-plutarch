@@ -94,11 +94,18 @@ instance PNum PBoughtSold where
     psignum = plam $ \x -> pmkBoughtSold # 1 # 1
     pfromInteger x = ptraceError "should not create PBoughtSold from a single Integer"
 
-instance PIntegral PBoughtSold where
-  pdiv = papplyToBS # pdiv
-  pmod = papplyToBS # pmod
-  pquot = papplyToBS # pquot
-  prem = papplyToBS # prem
+pdivides :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
+pdivides = plam $ \x' y' -> P.do
+    x <- pletFields @["bought", "sold"] x'
+    y <- pletFields @["bought", "sold"] y'
+    (   ( prem # (pto $ pfromData y.bought) # (pto $ pfromData x.bought) #== 0 ) #&& 
+        ( prem # (pto $ pfromData y.sold)   # (pto $ pfromData x.sold)   #== 0 )   )
+
+-- instance PIntegral PBoughtSold where
+--   pdiv = papplyToBS # pdiv
+--   pmod = papplyToBS # pmod
+--   pquot = papplyToBS # pquot
+--   prem = papplyToBS # prem
 
 pvalueOfAsset :: Term s (V1.PValue Sorted Positive :--> PAsset :--> PPositive)
 pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
@@ -109,12 +116,6 @@ pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue Sorted Positive :--> 
 pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
     plet (pvalueOfAsset # value) $ \pofAsset ->
         ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
-
-zeroBS :: Term s PBoughtSold
-zeroBS = pcon $ PBoughtSold $ 
-        pdcons @"bought" @PPositive # (pdata 0) 
-    #$  pdcons @"sold"   @PPositive # (pdata 0) 
-    #   pdnil
 
 newtype PParam (s :: S)
     = PParam
