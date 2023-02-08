@@ -61,8 +61,8 @@ newtype PBoughtSold (s :: S)
         ( Term
             s
             ( PDataRecord
-                '[ "bought" ':= PPositive
-                , "sold" ':= PPositive
+                '[ "bought" ':= PInteger
+                , "sold" ':= PInteger
                 ]
             )
         )
@@ -72,13 +72,13 @@ instance DerivePlutusType PBoughtSold where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PBoughtSold
 instance PTryFrom PData (PAsData PBoughtSold)
 
-pmkBoughtSold :: Term s (PPositive :--> PPositive :--> PBoughtSold)
+pmkBoughtSold :: Term s (PInteger :--> PInteger :--> PBoughtSold)
 pmkBoughtSold = phoistAcyclic $ plam $ \bought sold -> pcon $ PBoughtSold $ 
-        pdcons @"bought" @PPositive # (pdata bought) 
-    #$  pdcons @"sold"   @PPositive # (pdata sold) 
+        pdcons @"bought" @PInteger # (pdata bought) 
+    #$  pdcons @"sold"   @PInteger # (pdata sold) 
     #   pdnil
 
-papplyToBS :: Term s ((PPositive :--> PPositive :--> PPositive) :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold)
+papplyToBS :: Term s ((PInteger :--> PInteger :--> PInteger) :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold)
 papplyToBS = phoistAcyclic $ plam $ \f x' y' -> P.do 
     x <- pletFields @["bought", "sold"] x'
     y <- pletFields @["bought", "sold"] y'
@@ -89,17 +89,17 @@ instance PNum PBoughtSold where
     x #+ y = papplyToBS # (plam (+)) # x # y
     x #- y = papplyToBS # (plam (-)) # x # y
     x #* y = papplyToBS # (plam (*)) # x # y
-    pnegate = ptraceError "cannot negate PPositives"
-    pabs = plam $ \x -> x
-    psignum = plam $ \x -> pmkBoughtSold # 1 # 1
+    pnegate = ptraceError "should not negate PBoughtSold"
+    pabs = ptraceError "should not need absolute of PBoughtSold"
+    psignum = ptraceError "signum ill-defined for PBoughtSold"
     pfromInteger x = ptraceError "should not create PBoughtSold from a single Integer"
 
 pdivides :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pdivides = plam $ \x' y' -> P.do
     x <- pletFields @["bought", "sold"] x'
     y <- pletFields @["bought", "sold"] y'
-    (   ( prem # (pto $ pfromData y.bought) # (pto $ pfromData x.bought) #== 0 ) #&& 
-        ( prem # (pto $ pfromData y.sold)   # (pto $ pfromData x.sold)   #== 0 )   )
+    (   ( prem # (pfromData y.bought) # (pfromData x.bought) #== 0 ) #&& 
+        ( prem # (pfromData y.sold)   # (pfromData x.sold)   #== 0 )   )
 
 -- instance PIntegral PBoughtSold where
 --   pdiv = papplyToBS # pdiv
@@ -107,10 +107,10 @@ pdivides = plam $ \x' y' -> P.do
 --   pquot = papplyToBS # pquot
 --   prem = papplyToBS # prem
 
-pvalueOfAsset :: Term s (V1.PValue Sorted Positive :--> PAsset :--> PPositive)
+pvalueOfAsset :: Term s (V1.PValue Sorted Positive :--> PAsset :--> PInteger)
 pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
     asset <- pletFields @["currencySymbol", "tokenName"] asset'
-    ( ptryPositive #$ V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
+    ( V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
 pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue 'Sorted 'Positive :--> PBoughtSold)
 pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
@@ -122,8 +122,8 @@ pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts
     bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
     sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
     amnts <- pletFields @["bought", "sold"] boughtSoldAmnts
-    (   ( V1.psingleton # bought.currencySymbol # bought.tokenName # (pto $ pfromData amnts.bought) ) <>
-        ( V1.psingleton # sold.currencySymbol # sold.tokenName # (pto $ pfromData amnts.sold) )        )
+    (   ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought ) <>
+        ( V1.psingleton # sold.currencySymbol   # sold.tokenName    # amnts.sold  )  )
 
 newtype PParam (s :: S)
     = PParam
@@ -131,9 +131,9 @@ newtype PParam (s :: S)
             s
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
-                , "jumpSizes" ':= V1.PValue Sorted Positive 
-                , "highestPrices" ':= V1.PValue Sorted Positive   
+                , "virtual" ':= V1.PValue Sorted Positive -- virtual liqudity, for range pools & sslp  
                 , "weights" ':= V1.PValue Sorted Positive -- actually inverted weights in the AMM-view
+                , "jumpSizes" ':= V1.PValue Sorted Positive 
                 ]
             )
         )

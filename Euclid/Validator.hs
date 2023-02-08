@@ -26,10 +26,9 @@ import Plutarch.Maybe
 import Euclid.Utils
 import Euclid.Types
 
-ppricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-ppricesFitDirac = plam $ \swapPrices lowestPrices highestPrices jumpSizes ->
-    ( swapPrices #<= highestPrices ) #&&
-    ( pdivides # jumpSizes #$ swapPrices #- lowestPrices ) -- #- implicitly checks lowestPrices #<= swapPrices
+ppricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+ppricesFitDirac = plam $ \swapPrices lowestPrices jumpSizes ->
+    pdivides # jumpSizes #$ swapPrices #- lowestPrices -- #- implicitly checks lowestPrices #<= swapPrices
 
 pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
@@ -40,9 +39,9 @@ pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do
 
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-pvalueEquation = plam $ \swapPrices oldBalances newBalances -> P.do
-    let oldA0' = swapPrices * oldBalances
-        newA0' = swapPrices * newBalances
+pvalueEquation = plam $ \swapPrices oldLiquidity newLiquidity -> P.do
+    let oldA0' = swapPrices * oldLiquidity
+        newA0' = swapPrices * newLiquidity
     oldA0 <- pletFields @["bought", "sold"] oldA0'
     newA0 <- pletFields @["bought", "sold"] newA0'
     (   ( (pfromData oldA0.bought) + (pfromData oldA0.sold) ) #<= 
@@ -78,30 +77,36 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
 
     PDiracDatum newDirac <- pmatch $ punpackEuclidDatum # newTxO.datum
     PParamDatum param' <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
-    param <- pletFields @["jumpSizes", "highestPrices", "weights"] $ pfield @"param" # param'
+    param <- pletFields @["virtual", "weights", "jumpSizes"] $ pfield @"param" # param'
     swap <- pletFields @["boughtAsset", "soldAsset", "prices"] swap'
 
     let pof             = pboughtSoldOf # swap.boughtAsset # swap.soldAsset -- TODO vs. plets
         passetForSale   = pboughtAssetForSale # swap.prices
         
-        oldBalances     = pof # oldTxO.value
-        newBalances     = pof # newTxO.value
+        virtual         = pof # param.virtual
         weights         = pof # param.weights
         jumpSizes       = pof # param.jumpSizes
-        highestPrices   = pof # param.highestPrices
+        
         lowestPrices    = pof # dirac.lowestPrices
-        oldAmmPrices    = oldBalances #* weights
-        newAmmPrices    = newBalances #* weights
 
-    (   ( dirac' #== (pfield @"dirac" # newDirac)                                       ) #&&
-        ( ppricesFitDirac   # swap.prices # lowestPrices # highestPrices # jumpSizes    ) #&&
-        ( passetForSale     # oldAmmPrices                                              ) #&&
-        ( passetForSale     # newAmmPrices                                              ) #&&
-        ( pvalueEquation    # swap.prices # oldBalances # newBalances                   ) #&&
+        oldBalances     = pof # oldTxO.value
+        newBalances     = pof # newTxO.value
+
+        oldLiquidity    = virtual #+ oldBalances
+        newLiquidity    = virtual #+ newBalances
+
+        oldAmmPrices    = oldLiquidity #* weights
+        newAmmPrices    = newLiquidity #* weights
+
+    (   ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
+        ( ppricesFitDirac   # swap.prices # lowestPrices # jumpSizes    ) #&&
+        ( passetForSale     # oldAmmPrices                              ) #&&
+        ( passetForSale     # newAmmPrices                              ) #&&
+        ( pvalueEquation    # swap.prices # oldLiquidity # newLiquidity ) #&&
         ( pothersUnchanged  # swap.boughtAsset 
                             # swap.soldAsset 
-                            # oldBalances 
-                            # newBalances 
+                            # oldBalances
+                            # newBalances
                             # oldTxO.value 
                             # newTxO.value )  )
 
