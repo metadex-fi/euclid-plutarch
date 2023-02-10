@@ -37,6 +37,12 @@ pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do
     (   ( (pfromData swpp.sold) * (pfromData ammp.bought) ) #<= -- results from ammp <= swpp, with *p := *p.bought / *p.sold
         ( (pfromData ammp.sold) * (pfromData swpp.bought) )   ) -- ==> ammp.bought / ammp.sold <= swpp.bought / swpp.sold
 
+-- TODO maybe this could be combined somehow with ppricesFitDirac later
+ppricesBoxed :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
+ppricesBoxed = plam $ \swapPrices ammPrices jumpSizes ->
+    ( ammPrices #< swapPrices ) #&& 
+    ( swapPrices #<= ( ammPrices #+ jumpSizes ) )
+
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
 pvalueEquation = plam $ \swapPrices oldLiquidity newLiquidity -> P.do
@@ -44,7 +50,7 @@ pvalueEquation = plam $ \swapPrices oldLiquidity newLiquidity -> P.do
         newA0' = swapPrices * newLiquidity
     oldA0 <- pletFields @["bought", "sold"] oldA0'
     newA0 <- pletFields @["bought", "sold"] newA0'
-    (   ( (pfromData oldA0.bought) + (pfromData oldA0.sold) ) #<= 
+    (   ( (pfromData oldA0.bought) + (pfromData oldA0.sold) ) #< -- NOTE inequality here, TODO reconsider
         ( (pfromData newA0.bought) + (pfromData newA0.sold) )   )
 
 -- TODO could do this more efficiently, maybe
@@ -102,6 +108,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         ( ppricesFitDirac   # swap.prices # lowestPrices # jumpSizes    ) #&&
         ( passetForSale     # oldAmmPrices                              ) #&&
         ( passetForSale     # newAmmPrices                              ) #&&
+        ( ppricesBoxed      # swap.prices # oldAmmPrices # jumpSizes    ) #&&
         ( pvalueEquation    # swap.prices # oldLiquidity # newLiquidity ) #&&
         ( pothersUnchanged  # swap.boughtAsset 
                             # swap.soldAsset 
