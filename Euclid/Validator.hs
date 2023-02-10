@@ -30,18 +30,13 @@ ppricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PB
 ppricesFitDirac = plam $ \swapPrices lowestPrices jumpSizes ->
     pdivides # jumpSizes #$ swapPrices #- lowestPrices -- #- implicitly checks lowestPrices #<= swapPrices
 
+-- TODO consider rounding-error based trickery (also in other places)
 pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
     swpp <- pletFields @["bought", "sold"] swapPrices
     ammp <- pletFields @["bought", "sold"] ammPrices
-    (   ( (pfromData swpp.sold) * (pfromData ammp.bought) ) #<= -- results from ammp <= swpp, with *p := *p.bought / *p.sold
-        ( (pfromData ammp.sold) * (pfromData swpp.bought) )   ) -- ==> ammp.bought / ammp.sold <= swpp.bought / swpp.sold
-
--- TODO maybe this could be combined somehow with ppricesFitDirac later
-ppricesBoxed :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-ppricesBoxed = plam $ \swapPrices ammPrices jumpSizes ->
-    ( ammPrices #<= swapPrices ) #&&  -- TODO reconsider #<= vs #< (using this now for better fit with offchain)
-    ( swapPrices #< ( ammPrices #+ jumpSizes ) )
+    (   ( (pfromData ammp.bought) #<= (pfromData swpp.bought) ) #&&
+        ( (pfromData swpp.sold  ) #<= (pfromData ammp.sold  ) )   )
 
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
@@ -108,7 +103,6 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         ( ppricesFitDirac   # swap.prices # lowestPrices # jumpSizes    ) #&&
         ( passetForSale     # oldAmmPrices                              ) #&&
         ( passetForSale     # newAmmPrices                              ) #&&
-        ( ppricesBoxed      # swap.prices # oldAmmPrices # jumpSizes    ) #&&
         ( pvalueEquation    # swap.prices # oldLiquidity # newLiquidity ) #&&
         ( pothersUnchanged  # swap.boughtAsset 
                             # swap.soldAsset 
