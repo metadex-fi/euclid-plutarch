@@ -33,22 +33,35 @@ peuclidMinting = phoistAcyclic $ plam $ \_ ctx -> P.do
     info <- pletFields @["mint", "signatories"] info'
     let owner = pto $ pfromData $ phead #$ info.signatories
         mints = pto $ pto $ pfromData info.mint
-        tkns = pto $ pfromData $ psndBuiltin #$ phead # mints
+        tkns = pto $ pfromData $ psndBuiltin #$ phead #$ ptail # mints
 
-    pif 
-        ( pnull #$ ptail # mints )
+    pif  -- TODO can we handle it better than this?
+        (   ( (pfromData $ pfstBuiltin #$phead # mints) #== ( V1.padaSymbol) ) #&&
+            ( pnull #$ ptail #$ ptail # mints ) )
         ( f # owner # tkns ) -- tkns are expected to be sorted
         ( ptraceError "dirac minting failure" )
 
     where 
-        -- hash supposed owner until it matches first tkn, then pop, repeat with next one, until all passed
         f :: Term s (PByteString :--> PBuiltinList (PBuiltinPair (PAsData V1.PTokenName) (PAsData PInteger)) :--> POpaque)
         f = pfix #$ plam $ \self owner tkns ->
-            pmatch tkns $ \case 
-                PCons x xs -> 
-                    plet (psha2_256 # owner) $ \owner' ->
-                        pif 
-                            (owner #== (pto $ pfromData $ pfstBuiltin # x))
-                            (self # owner' # xs)
-                            (self # owner' # (pcons # x # xs)) -- TODO this could be more efficient
-                PNil -> popaque $ pcon PUnit
+            pif 
+                ( pnull # tkns )
+                ( popaque $ pcon PUnit )
+                ( self 
+                    # (psha2_256 # owner) 
+                    #$ pfilter 
+                        # ( plam $ \tkn -> pnot #$ (pto $ pfromData $ pfstBuiltin # tkn) #== owner )
+                        # tkns )
+
+-- TODO compare with old version (probably more efficient, but dysfunctional rn)
+        -- hash supposed owner until it matches first tkn, then pop, repeat with next one, until all passed
+        -- f :: Term s (PByteString :--> PBuiltinList (PBuiltinPair (PAsData V1.PTokenName) (PAsData PInteger)) :--> POpaque)
+        -- f = pfix #$ plam $ \self owner tkns ->
+        --     pmatch tkns $ \case 
+        --         PCons x xs ->
+        --             plet (psha2_256 # owner) $ \owner' -> 
+        --                 pif 
+        --                     (owner #== (pto $ pfromData $ pfstBuiltin # x))
+        --                     (self # owner # xs)
+        --                     (self # owner' # (pcons # x # xs)) -- TODO this could be more efficient
+        --         PNil -> popaque $ pcon PUnit
