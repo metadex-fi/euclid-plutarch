@@ -107,12 +107,12 @@ pdivides = plam $ \x' y' -> P.do
 --   pquot = papplyToBS # pquot
 --   prem = papplyToBS # prem
 
-pvalueOfAsset :: Term s (V1.PValue Sorted Positive :--> PAsset :--> PInteger)
+pvalueOfAsset :: Term s (V1.PValue any 'Positive :--> PAsset :--> PInteger)
 pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
     asset <- pletFields @["currencySymbol", "tokenName"] asset'
     ( V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
-pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue 'Sorted 'Positive :--> PBoughtSold)
+pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue any 'Positive :--> PBoughtSold)
 pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
     plet (pvalueOfAsset # value) $ \pofAsset ->
         ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
@@ -131,9 +131,9 @@ newtype PParam (s :: S)
             s
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
-                , "virtual" ':= V1.PValue Sorted Positive -- virtual liqudity, for range pools & sslp  
-                , "weights" ':= V1.PValue Sorted Positive -- actually inverted weights in the AMM-view
-                , "jumpSizes" ':= V1.PValue Sorted Positive 
+                , "virtual" ':= V1.PValue Unsorted Positive -- virtual liqudity, for range pools & sslp  
+                , "weights" ':= V1.PValue Unsorted Positive -- actually inverted weights in the AMM-view
+                , "jumpSizes" ':= V1.PValue Unsorted Positive 
                 ]
             )
         )
@@ -152,7 +152,7 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT -- TODO implement the NFT-mechanics around this later
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "lowestPrices" ':= V1.PValue Sorted Positive
+                , "lowestPrices" ':= V1.PValue Unsorted Positive
                 ]
             )
         )
@@ -163,6 +163,7 @@ instance DerivePlutusType PDirac
 instance PTryFrom PData (PAsData PDirac)
 instance PTryFrom PData PDirac
 
+-- TODO consider saving bytes by not nesting the underlying constrs
 data PEuclidDatum (s :: S)
   = PDiracDatum (Term s (PDataRecord '["dirac" ':= PDirac]))
   | PParamDatum (Term s (PDataRecord '["param" ':= PParam]))
@@ -194,7 +195,7 @@ instance PTryFrom PData PSwap
 -- | redeemer.
 data PEuclidAction (s :: S)
     = PSwapRedeemer (Term s (PDataRecord '["swap" ':= PSwap]))
-    | PAdminRedeemer (Term s (PDataRecord '[]))
+    | PAdminRedeemer (Term s (PDataRecord '[])) -- TODO unnecessary
     deriving stock (Generic)
     deriving anyclass (PlutusType, PIsData, PShow)
 instance DerivePlutusType PEuclidAction where type DPTStrat _ = PlutusTypeData

@@ -32,21 +32,21 @@ ppricesFitDirac = plam $ \swapPrices lowestPrices jumpSizes ->
 
 -- TODO consider rounding-error based trickery (also in other places)
 pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
-pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
-    swpp <- pletFields @["bought", "sold"] swapPrices
-    ammp <- pletFields @["bought", "sold"] ammPrices
-    (   ( (pfromData ammp.bought) #<= (pfromData swpp.bought) ) #&&
-        ( (pfromData swpp.sold  ) #<= (pfromData ammp.sold  ) )   )
+pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> pconstant True--P.do 
+    -- swpp <- pletFields @["bought", "sold"] swapPrices
+    -- ammp <- pletFields @["bought", "sold"] ammPrices
+    -- (   ( (pfromData ammp.bought) #<= (pfromData swpp.bought) ) #&&
+    --     ( (pfromData swpp.sold  ) #<= (pfromData ammp.sold  ) )   )
 
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
 pvalueEquation = plam $ \swapPrices oldLiquidity newLiquidity -> P.do
-    let oldA0' = swapPrices * oldLiquidity
-        newA0' = swapPrices * newLiquidity
-    oldA0 <- pletFields @["bought", "sold"] oldA0'
-    newA0 <- pletFields @["bought", "sold"] newA0'
-    (   ( (pfromData oldA0.bought) + (pfromData oldA0.sold) ) #<= -- TODO reconsider #<= vs #<
-        ( (pfromData newA0.bought) + (pfromData newA0.sold) )   ) -- (using #<= now for better fit with offchain)
+    let addedLiquidity = newLiquidity #- oldLiquidity
+        addedA0' = swapPrices * addedLiquidity
+    addedA0 <- pletFields @["bought", "sold"] addedA0'
+    ( 0 #<= (pfromData addedA0.sold) + (pfromData addedA0.bought) ) -- TODO reconsider #<= vs #< (using #<= now for better fit with offchain)
+
+
 
 -- TODO could do this more efficiently, maybe
 pothersUnchanged :: Term s ( PAsset 
@@ -69,9 +69,9 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
 
     dirac <- pletFields @["owner", "threadNFT", "paramNFT", "lowestPrices"] dirac'
         
-    let oldTxO' = pfromJust #$ pfind # (poutHasNFT # dirac.threadNFT) # info.outputs
-        newTxO' = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.threadNFT) # info.inputs 
-        refTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.paramNFT) # info.referenceInputs 
+    let refTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.paramNFT) # info.referenceInputs 
+        oldTxO' = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.threadNFT) # info.inputs 
+        newTxO' = pfromJust #$ pfind # (poutHasNFT # dirac.threadNFT) # info.outputs
 
     oldTxO <- pletFields @["address", "value"] oldTxO'
     newTxO <- pletFields @["address", "value", "datum"] newTxO'
@@ -90,8 +90,8 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         
         lowestPrices    = pof # dirac.lowestPrices
 
-        oldBalances     = pof # oldTxO.value
-        newBalances     = pof # newTxO.value
+        oldBalances     = pof #$ V1.pforgetSorted oldTxO.value
+        newBalances     = pof #$ V1.pforgetSorted newTxO.value
 
         oldLiquidity    = virtual #+ oldBalances
         newLiquidity    = virtual #+ newBalances
