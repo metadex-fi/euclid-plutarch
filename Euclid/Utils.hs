@@ -14,7 +14,6 @@ import qualified PlutusCore as PLC
 import Plutarch.Unsafe (punsafeBuiltin)
 import qualified Plutarch.Api.V1 as V1
 import qualified Plutarch.Api.V1.Value as V1
-import qualified Euclid.Plutarch.AssocMap as AssocMap
 import qualified Plutarch.Monadic as P
 import Plutarch.Num
 import Plutarch.Maybe

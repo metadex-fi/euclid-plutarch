@@ -22,52 +22,50 @@ import qualified Plutarch.Api.V1.AssocMap as AssocMap
 import qualified Plutarch.Monadic as P
 import Plutarch.Num
 import Plutarch.Maybe
+import PlutusTx.Monoid qualified as PlutusTx
+import PlutusTx.Semigroup qualified as PlutusTx
 
 import Euclid.Utils
 import Euclid.Types
 
 ppricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-ppricesFitDirac = plam $ \swapPrices lowestPrices jumpSizes ->
-    pdivides # jumpSizes #$ swapPrices #- lowestPrices -- #- implicitly checks lowestPrices #<= swapPrices
+ppricesFitDirac = plam $ \swapPrices anchorPrices jumpSizes ->
+    pdivides # jumpSizes #$ swapPrices - anchorPrices
 
 -- TODO consider rounding-error based trickery (also in other places)
+-- NOTE: prices are inverted, otherwise buying would decrease the price and vice versa
 pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
-pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> pconstant True--P.do 
-    -- swpp <- pletFields @["bought", "sold"] swapPrices
-    -- ammp <- pletFields @["bought", "sold"] ammPrices
-    -- (   ( (pfromData ammp.bought) #<= (pfromData swpp.bought) ) #&&
-    --     ( (pfromData swpp.sold  ) #<= (pfromData ammp.sold  ) )   )
+pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
+    swpp <- pletFields @["bought", "sold"] swapPrices
+    ammp <- pletFields @["bought", "sold"] ammPrices
+    (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
+        ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
 
  -- TODO explicit fees?
-pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-pvalueEquation = plam $ \swapPrices oldLiquidity newLiquidity -> P.do
-    let addedLiquidity = newLiquidity #- oldLiquidity
-        addedA0' = swapPrices * addedLiquidity
-    addedA0 <- pletFields @["bought", "sold"] addedA0'
-    ( 0 #<= (pfromData addedA0.sold) + (pfromData addedA0.bought) ) -- TODO reconsider #<= vs #< (using #<= now for better fit with offchain)
-
-
+ -- NOTE: prices are inverted, otherwise buying would decrease the price and vice versa
+pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
+pvalueEquation = plam $ \swapPrices addedBalances -> P.do
+    added <- pletFields @["bought", "sold"] addedBalances
+    swpp <- pletFields @["bought", "sold"] swapPrices
+    (   ( (pnegate #$ pfromData added.bought) * (pfromData swpp.sold) ) #<=
+        ( (pfromData added.sold) * (pfromData swpp.bought) )   )
+    -- TODO reconsider #<= vs #< (using #<= now for better fit with offchain)
 
 -- TODO could do this more efficiently, maybe
 pothersUnchanged :: Term s ( PAsset 
                         :--> PAsset 
                         :--> PBoughtSold 
-                        :--> PBoughtSold 
-                        :--> V1.PValue 'Sorted 'Positive 
-                        :--> V1.PValue 'Sorted 'Positive 
+                        :--> V1.PValue 'Sorted 'NonZero 
                         :--> PBool )
-pothersUnchanged = plam $ \boughtAsset soldAsset oldBalances newBalances oldValue newValue ->
-    plet (pboughtSoldValue # boughtAsset # soldAsset) $ \toValue ->
-        ( V1.punionWith # plam (-) # oldValue #$ toValue # oldBalances ) #==
-        ( V1.punionWith # plam (-) # newValue #$ toValue # newBalances )
-
+pothersUnchanged = plam $ \boughtAsset soldAsset addedBalances addedValue ->
+    ((pboughtSoldValue # boughtAsset # soldAsset # addedBalances) #== addedValue)
 
 pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
 pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do 
     info <- pletFields @["inputs", "referenceInputs", "outputs", "mint"] 
             $ pfield @"txInfo" # ctx
 
-    dirac <- pletFields @["owner", "threadNFT", "paramNFT", "lowestPrices"] dirac'
+    dirac <- pletFields @["owner", "threadNFT", "paramNFT", "anchorPrices"] dirac'
         
     let refTxO = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.paramNFT) # info.referenceInputs 
         oldTxO' = pfield @"resolved" #$ pfromJust #$ pfind # (pinHasNFT # dirac.threadNFT) # info.inputs 
@@ -78,38 +76,41 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
 
     PDiracDatum newDirac <- pmatch $ punpackEuclidDatum # newTxO.datum
     PParamDatum param' <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
-    param <- pletFields @["virtual", "weights", "jumpSizes"] $ pfield @"param" # param'
+    -- param <- pletFields @["virtual", "weights", "jumpSizes"] $ pfield @"param" # param'
+    param <- pletFields @["virtual", "weights", "jumpSizes", "active"] $ pfield @"param" # param'
     swap <- pletFields @["boughtAsset", "soldAsset", "prices"] swap'
 
     let pof             = pboughtSoldOf # swap.boughtAsset # swap.soldAsset -- TODO vs. plets
         passetForSale   = pboughtAssetForSale # swap.prices
         
-        virtual         = pof # param.virtual
-        weights         = pof # param.weights
-        jumpSizes       = pof # param.jumpSizes
+        virtual         = pof #$ V1.pforgetPositive param.virtual
+        weights         = pof #$ V1.pforgetPositive param.weights
+        jumpSizes       = pof #$ V1.pforgetPositive param.jumpSizes
         
-        lowestPrices    = pof # dirac.lowestPrices
+        anchorPrices    = pof  #$ V1.pforgetPositive dirac.anchorPrices
 
-        oldBalances     = pof #$ V1.pforgetSorted oldTxO.value
-        newBalances     = pof #$ V1.pforgetSorted newTxO.value
+        oldValue        = V1.pforgetPositive $ oldTxO.value
+        newValue        = V1.pforgetPositive $ newTxO.value
 
-        oldLiquidity    = virtual #+ oldBalances
-        newLiquidity    = virtual #+ newBalances
+        addedValue      =  V1.pnormalize #$ newValue <> (PlutusTx.inv oldValue)
+        addedBalances   = pof #$ V1.pforgetSorted addedValue
+
+        oldLiquidity    = virtual #+ (pof #$ V1.pforgetSorted oldValue)
+        newLiquidity    = virtual #+ (pof #$ V1.pforgetSorted newValue)
 
         oldAmmPrices    = oldLiquidity #* weights
         newAmmPrices    = newLiquidity #* weights
 
-    (   ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
-        ( ppricesFitDirac   # swap.prices # lowestPrices # jumpSizes    ) #&&
+    (   ( (pfromData param.active) #== 1                                ) #&&
+        ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
+        ( ppricesFitDirac   # swap.prices # anchorPrices # jumpSizes    ) #&&
         ( passetForSale     # oldAmmPrices                              ) #&&
         ( passetForSale     # newAmmPrices                              ) #&&
-        ( pvalueEquation    # swap.prices # oldLiquidity # newLiquidity ) #&&
+        ( pvalueEquation    # swap.prices # addedBalances               ) #&& 
         ( pothersUnchanged  # swap.boughtAsset 
                             # swap.soldAsset 
-                            # oldBalances
-                            # newBalances
-                            # oldTxO.value 
-                            # newTxO.value )  )
+                            # addedBalances
+                            # addedValue )  )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do
@@ -134,7 +135,7 @@ peuclidValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do
                         # (pfield @"owner" # dirac)
                         # ctx
                     PSwapRedeemer swap -> pswap # dirac # (pfield @"swap" # swap) # ctx
-                    _ -> ( ptraceError "unknown redeemer" )
+                    -- _ -> ( ptraceError "unknown redeemer" )
             ) 
     pif 
         pass 

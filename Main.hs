@@ -27,7 +27,7 @@ import Plutarch.Prelude (
   (#),
   (:-->),
  )
-import Ply ((#))
+-- import Ply ((#))
 import Ply.Plutarch.TypedWriter (mkEnvelope)
 import ScriptExport.Export (exportMain)
 import ScriptExport.ScriptInfo (

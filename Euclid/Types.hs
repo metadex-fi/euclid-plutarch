@@ -89,9 +89,19 @@ instance PNum PBoughtSold where
     x #+ y = papplyToBS # (plam (+)) # x # y
     x #- y = papplyToBS # (plam (-)) # x # y
     x #* y = papplyToBS # (plam (*)) # x # y
-    pnegate = ptraceError "should not negate PBoughtSold"
-    pabs = ptraceError "should not need absolute of PBoughtSold"
-    psignum = ptraceError "signum ill-defined for PBoughtSold"
+    pnegate = phoistAcyclic $ plam $ \x -> pmkBoughtSold 
+        # (pnegate #$ pfield @"bought" # x) 
+        #$ pnegate #$ pfield @"sold" # x
+    pabs = phoistAcyclic $ plam $ \x -> pmkBoughtSold 
+        # (pabs #$ pfield @"bought" # x) 
+        #$ pabs #$ pfield @"sold" # x
+    psignum = ptraceError "signum not implemented"
+    -- phoistAcyclic $ plam $ \x' -> P.do 
+    --     x <- pletFields @["bought", "sold"] x'
+    --     plet (psignum # x.bought) $ \bsig ->
+    --         pif ( bsig #== (psignum # x.sold) )
+    --             ( bsig )
+    --             ( ptraceError "ill-defined signum" )
     pfromInteger x = ptraceError "should not create PBoughtSold from a single Integer"
 
 pdivides :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
@@ -107,12 +117,12 @@ pdivides = plam $ \x' y' -> P.do
 --   pquot = papplyToBS # pquot
 --   prem = papplyToBS # prem
 
-pvalueOfAsset :: Term s (V1.PValue any 'Positive :--> PAsset :--> PInteger)
+pvalueOfAsset :: Term s (V1.PValue 'Unsorted 'NonZero :--> PAsset :--> PInteger)
 pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
     asset <- pletFields @["currencySymbol", "tokenName"] asset'
     ( V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
-pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue any 'Positive :--> PBoughtSold)
+pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue 'Unsorted 'NonZero :--> PBoughtSold)
 pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
     plet (pvalueOfAsset # value) $ \pofAsset ->
         ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
@@ -134,6 +144,7 @@ newtype PParam (s :: S)
                 , "virtual" ':= V1.PValue Unsorted Positive -- virtual liqudity, for range pools & sslp  
                 , "weights" ':= V1.PValue Unsorted Positive -- actually inverted weights in the AMM-view
                 , "jumpSizes" ':= V1.PValue Unsorted Positive 
+                , "active" ':= PInteger -- TODO consider using PBool
                 ]
             )
         )
@@ -152,7 +163,7 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT -- TODO implement the NFT-mechanics around this later
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "lowestPrices" ':= V1.PValue Unsorted Positive
+                , "anchorPrices" ':= V1.PValue Unsorted Positive
                 ]
             )
         )
@@ -181,7 +192,7 @@ newtype PSwap (s :: S)
             ( PDataRecord
                 '["boughtAsset" ':= PAsset
                 ,"soldAsset" ':= PAsset
-                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0
+                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0. inverted
                 ]
             )
         )
