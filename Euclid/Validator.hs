@@ -33,22 +33,21 @@ ppricesFitDirac = plam $ \swapPrices anchorPrices jumpSizes ->
     pdivides # jumpSizes #$ swapPrices - anchorPrices
 
 -- TODO consider rounding-error based trickery (also in other places)
--- NOTE: prices are inverted, otherwise buying would decrease the price and vice versa
+-- NOTE amm-prices are inverted/selling, swap prices are regular/buying
 pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
     swpp <- pletFields @["bought", "sold"] swapPrices
     ammp <- pletFields @["bought", "sold"] ammPrices
-    (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
-        ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
+    (   ( 1 #<= (pfromData swpp.bought) * (pfromData ammp.bought) ) #&&
+        ( (pfromData swpp.sold  ) * (pfromData ammp.sold  ) #<= 1 )   )
 
  -- TODO explicit fees?
- -- NOTE: prices are inverted, otherwise buying would decrease the price and vice versa
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pvalueEquation = plam $ \swapPrices addedBalances -> P.do
     added <- pletFields @["bought", "sold"] addedBalances
     swpp <- pletFields @["bought", "sold"] swapPrices
-    (   ( (pnegate #$ pfromData added.bought) * (pfromData swpp.sold) ) #<=
-        ( (pfromData added.sold) * (pfromData swpp.bought) )   )
+    (   ( (pnegate #$ pfromData added.bought) * (pfromData swpp.bought) ) #<=
+        ( (pfromData added.sold) * (pfromData swpp.sold) )   )
     -- TODO reconsider #<= vs #< (using #<= now for better fit with offchain)
 
 -- TODO could do this more efficiently, maybe
@@ -98,8 +97,8 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         oldLiquidity    = virtual #+ (pof #$ V1.pforgetSorted oldValue)
         newLiquidity    = virtual #+ (pof #$ V1.pforgetSorted newValue)
 
-        oldAmmPrices    = oldLiquidity #* weights
-        newAmmPrices    = newLiquidity #* weights
+        oldAmmPrices    = oldLiquidity #* weights -- NOTE: inverted/selling prices
+        newAmmPrices    = newLiquidity #* weights -- NOTE: inverted/selling prices
 
     (   ( (pfromData param.active) #== 1                                ) #&&
         ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
