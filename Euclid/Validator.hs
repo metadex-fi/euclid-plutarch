@@ -28,9 +28,18 @@ import PlutusTx.Semigroup qualified as PlutusTx
 import Euclid.Utils
 import Euclid.Types
 
-ppricesFitDirac :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBool)
-ppricesFitDirac = plam $ \swapPrices anchorPrices jumpSizes ->
-    pdivides # jumpSizes #$ swapPrices - anchorPrices
+pcalcSwapPrices :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold)
+pcalcSwapPrices = plam $ \anchorPrices jumpSizes exponents -> P.do 
+    anchors <- pletFields @["bought", "sold"] anchorPrices
+    jss <- pletFields @["bought", "sold"] jumpSizes
+    es <- pletFields @["bought", "sold"] exponents
+    let bought = pcalcSwapPrices_ # (pfromData anchors.bought) # (pfromData jss.bought) # (pfromData es.bought)
+        sold   = pcalcSwapPrices_ # (pfromData anchors.sold  ) # (pfromData jss.sold  ) # (pfromData es.sold  )
+    ( pmkBoughtSold # bought # sold )
+
+pcalcSwapPrices_ :: Term s (PInteger :--> PInteger :--> PInteger :--> PInteger)
+pcalcSwapPrices_ = phoistAcyclic $ plam $ \anchor js e -> 
+    pdiv # (anchor * (pexp_ # (js + 1) # e)) # (pexp_ # js # e)
 
 -- TODO consider rounding-error based trickery (also in other places)
 -- NOTE: prices are inverted, otherwise buying would decrease the price and vice versa
@@ -47,8 +56,10 @@ pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pvalueEquation = plam $ \swapPrices addedBalances -> P.do
     added <- pletFields @["bought", "sold"] addedBalances
     swpp <- pletFields @["bought", "sold"] swapPrices
-    (   ( (pnegate #$ pfromData added.bought) * (pfromData swpp.sold) ) #<=
-        ( (pfromData added.sold) * (pfromData swpp.bought) )   )
+    let pSold = pfromData swpp.sold
+        pBought = pfromData swpp.bought
+    (   ( (pnegate #$ pfromData added.bought) * pSold ) #<=
+        ( (pfromData added.sold) * pBought )   )
     -- TODO reconsider #<= vs #< (using #<= now for better fit with offchain)
 
 -- TODO could do this more efficiently, maybe
@@ -75,13 +86,17 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
     newTxO <- pletFields @["address", "value", "datum"] newTxO'
 
     PDiracDatum newDirac <- pmatch $ punpackEuclidDatum # newTxO.datum
+
+
+    -- here: instead match against Param or Diode, and proceed accordingly
+
+
     PParamDatum param' <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
-    -- param <- pletFields @["virtual", "weights", "jumpSizes"] $ pfield @"param" # param'
+
     param <- pletFields @["virtual", "weights", "jumpSizes", "active"] $ pfield @"param" # param'
     swap <- pletFields @["boughtAsset", "soldAsset", "prices"] swap'
 
     let pof             = pboughtSoldOf # swap.boughtAsset # swap.soldAsset -- TODO vs. plets
-        passetForSale   = pboughtAssetForSale # swap.prices
         
         virtual         = pof #$ V1.pforgetPositive param.virtual
         weights         = pof #$ V1.pforgetPositive param.weights
@@ -101,12 +116,14 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         oldAmmPrices    = oldLiquidity #* weights
         newAmmPrices    = newLiquidity #* weights
 
+        realSwapPrices  = pcalcSwapPrices # anchorPrices # jumpSizes # swap.prices
+        passetForSale   = pboughtAssetForSale # realSwapPrices
+
     (   ( (pfromData param.active) #== 1                                ) #&&
         ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
-        ( ppricesFitDirac   # swap.prices # anchorPrices # jumpSizes    ) #&&
         ( passetForSale     # oldAmmPrices                              ) #&&
         ( passetForSale     # newAmmPrices                              ) #&&
-        ( pvalueEquation    # swap.prices # addedBalances               ) #&& 
+        ( pvalueEquation    # realSwapPrices # addedBalances            ) #&& 
         ( pothersUnchanged  # swap.boughtAsset 
                             # swap.soldAsset 
                             # addedBalances

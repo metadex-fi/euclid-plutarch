@@ -111,6 +111,20 @@ pdivides = plam $ \x' y' -> P.do
     (   ( prem # (pfromData y.bought) # (pfromData x.bought) #== 0 ) #&& 
         ( prem # (pfromData y.sold)   # (pfromData x.sold)   #== 0 )   )
 
+pexp :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold)
+pexp = plam $ \b' e' -> P.do
+    b <- pletFields @["bought", "sold"] b'
+    e <- pletFields @["bought", "sold"] e'
+    ( pmkBoughtSold # (pexp_ # (pfromData b.bought) # (pfromData e.bought)) 
+                   #$ pexp_ # (pfromData b.sold) # (pfromData e.sold) )
+
+pexp_ :: Term s (PInteger :--> PInteger :--> PInteger)
+pexp_ = phoistAcyclic $ pfix #$ plam $ \self b e -> 
+    pif (e #== 0)
+        ( 1 )
+        ( plet (self # b #$ pdiv # e # 2) $ \b2 ->
+            b2 * b2 * (pif ((pmod # e # 2) #== 0) 1 b) )
+
 -- instance PIntegral PBoughtSold where
 --   pdiv = papplyToBS # pdiv
 --   pmod = papplyToBS # pmod
@@ -161,7 +175,7 @@ newtype PDirac (s :: S)
             s
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
-                , "threadNFT" ':= PIdNFT -- TODO implement the NFT-mechanics around this later
+                , "threadNFT" ':= PIdNFT
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
                 , "anchorPrices" ':= V1.PValue Unsorted Positive
                 ]
@@ -174,10 +188,64 @@ instance DerivePlutusType PDirac
 instance PTryFrom PData (PAsData PDirac)
 instance PTryFrom PData PDirac
 
+newtype PLimit (s :: S)
+    = PLimit
+        ( Term
+            s
+            ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
+                '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
+                , "swap" ':= PSwap
+                ]
+            )
+        )
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+instance DerivePlutusType PLimit
+    where type DPTStrat _ = PlutusTypeData
+instance PTryFrom PData (PAsData PLimit)
+instance PTryFrom PData PLimit
+
+newtype PPartial (s :: S)
+    = PPartial
+        ( Term
+            s
+            ( PDataRecord
+                '["threadNFT" ':= PIdNFT
+                , "limit" ':= PLimit
+                ]
+            )
+        )
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+instance DerivePlutusType PPartial
+    where type DPTStrat _ = PlutusTypeData
+instance PTryFrom PData (PAsData PPartial)
+instance PTryFrom PData PPartial
+
+newtype PDiode (s :: S)
+    = PDiode
+        ( Term
+            s
+            ( PDataRecord
+                '["param" ':= PParam
+                , "ranks" ':= V1.PValue Unsorted Positive -- can only swap assets with leq/lt rank
+                ]
+            )
+        )
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+instance DerivePlutusType PDiode
+    where type DPTStrat _ = PlutusTypeData
+instance PTryFrom PData (PAsData PDiode)
+instance PTryFrom PData PDiode
+
 -- TODO consider saving bytes by not nesting the underlying constrs
 data PEuclidDatum (s :: S)
   = PDiracDatum (Term s (PDataRecord '["dirac" ':= PDirac]))
   | PParamDatum (Term s (PDataRecord '["param" ':= PParam]))
+--   | PLimitDatum (Term s (PDataRecord '["limit" ':= PLimit]))
+--   | PPartialDatum (Term s (PDataRecord '["partial" ':= PPartial]))
+--   | PDiodeDatum (Term s (PDataRecord '["diode" ':= PDiode]))
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PEq, PShow)
 instance DerivePlutusType PEuclidDatum where type DPTStrat _ = PlutusTypeData
@@ -192,7 +260,7 @@ newtype PSwap (s :: S)
             ( PDataRecord
                 '["boughtAsset" ':= PAsset
                 ,"soldAsset" ':= PAsset
-                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0. inverted
+                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0. inverted.
                 ]
             )
         )
