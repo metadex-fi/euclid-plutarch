@@ -60,6 +60,7 @@ import Euclid.Types
 import Euclid.Validator
 import Euclid.Minting
 
+
 main :: IO ()
 main = exportMain builders
 

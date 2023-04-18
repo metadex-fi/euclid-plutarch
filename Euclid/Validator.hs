@@ -42,31 +42,43 @@ pcalcSwapPrices_ = phoistAcyclic $ plam $ \anchor js e ->
     pdiv # (anchor * (pexp_ # (js + 1) # e)) # (pexp_ # js # e)
 
 -- TODO consider rounding-error based trickery (also in other places)
--- NOTE amm-prices are inverted/selling, swap prices are regular/buying
+-- NOTE prices are inverted/selling, so buying decreases amm-price and vice versa
 pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
     swpp <- pletFields @["bought", "sold"] swapPrices
     ammp <- pletFields @["bought", "sold"] ammPrices
-    (   ( 1 #<= (pfromData swpp.bought) * (pfromData ammp.bought) ) #&&
-        ( (pfromData swpp.sold  ) * (pfromData ammp.sold  ) #<= 1 )   )
+    (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
+        ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
 
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pvalueEquation = plam $ \swapPrices addedBalances -> P.do
     added <- pletFields @["bought", "sold"] addedBalances
     swpp <- pletFields @["bought", "sold"] swapPrices
-    (   ( (pnegate #$ pfromData added.bought) * (pfromData swpp.bought) ) #<=
-        ( (pfromData added.sold) * (pfromData swpp.sold) )   )
+    (   ( (pnegate #$ pfromData added.bought) * (pfromData swpp.sold) ) #<=
+        ( (pfromData added.sold) * (pfromData swpp.bought) )   )
     -- TODO reconsider #<= vs #< (using #<= now for better fit with offchain)
 
 -- TODO could do this more efficiently, maybe
+-- NOTE/TODO hacking ambiguous equality measure manually here
 pothersUnchanged :: Term s ( PAsset 
                         :--> PAsset 
                         :--> PBoughtSold 
-                        :--> V1.PValue 'Sorted 'NonZero 
+                        :--> V1.PValue 'Sorted 'NoGuarantees 
                         :--> PBool )
 pothersUnchanged = plam $ \boughtAsset soldAsset addedBalances addedValue ->
-    ((pboughtSoldValue # boughtAsset # soldAsset # addedBalances) #== addedValue)
+    V1.pcheckBinRel
+        # plam (#==)
+        # addedValue
+        #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
+
+        -- NOTE: this seems to work as well
+    -- AssocMap.pall # (AssocMap.pall # plam (#== 0)) # pto (
+    --     V1.punionWith # plam (-) # addedValue 
+    --     #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
+    -- )
+
+    -- ((pboughtSoldValue # boughtAsset # soldAsset # addedBalances) #== addedValue)
 
 pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
 pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do 
@@ -94,21 +106,23 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
     swap <- pletFields @["boughtAsset", "soldAsset", "prices"] swap'
 
     let pof             = pboughtSoldOf # swap.boughtAsset # swap.soldAsset -- TODO vs. plets
+        pof_            = pboughtSoldOf # swap.boughtAsset # swap.soldAsset
         
         virtual         = pof #$ V1.pforgetPositive param.virtual
         weights         = pof #$ V1.pforgetPositive param.weights
         jumpSizes       = pof #$ V1.pforgetPositive param.jumpSizes
         
-        anchorPrices    = pof  #$ V1.pforgetPositive dirac.anchorPrices
+        anchorPrices    = pof #$ V1.pforgetPositive dirac.anchorPrices
 
-        oldValue        = V1.pforgetPositive $ oldTxO.value
-        newValue        = V1.pforgetPositive $ newTxO.value
+        oldValue        = oldTxO.value
+        newValue        = newTxO.value
 
-        addedValue      =  V1.pnormalize #$ newValue <> (PlutusTx.inv oldValue)
-        addedBalances   = pof #$ V1.pforgetSorted addedValue
+        -- addedValue      = V1.punionWith newValue <> (PlutusTx.inv oldValue)
+        addedValue      = V1.punionWith # plam (+) # newValue #$ pmapAmounts # plam negate # oldValue
+        addedBalances   = pboughtSoldOf # swap.boughtAsset # swap.soldAsset # addedValue
 
-        oldLiquidity    = virtual #+ (pof #$ V1.pforgetSorted oldValue)
-        newLiquidity    = virtual #+ (pof #$ V1.pforgetSorted newValue)
+        oldLiquidity    = virtual #+ (pof_ # oldValue)
+        newLiquidity    = virtual #+ (pof_ # newValue)
 
         oldAmmPrices    = oldLiquidity #* weights -- NOTE: inverted/selling prices
         newAmmPrices    = newLiquidity #* weights -- NOTE: inverted/selling prices
@@ -124,7 +138,8 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         ( pothersUnchanged  # swap.boughtAsset 
                             # swap.soldAsset 
                             # addedBalances
-                            # addedValue )  )
+                            # addedValue )  
+        )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do

@@ -131,23 +131,25 @@ pexp_ = phoistAcyclic $ pfix #$ plam $ \self b e ->
 --   pquot = papplyToBS # pquot
 --   prem = papplyToBS # prem
 
-pvalueOfAsset :: Term s (V1.PValue 'Unsorted 'NonZero :--> PAsset :--> PInteger)
+pvalueOfAsset :: Term s (V1.PValue anyKey anyAmount :--> PAsset :--> PInteger)
 pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
     asset <- pletFields @["currencySymbol", "tokenName"] asset'
     ( V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
-pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue 'Unsorted 'NonZero :--> PBoughtSold)
+pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue anyKey anyAmount :--> PBoughtSold)
 pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
     plet (pvalueOfAsset # value) $ \pofAsset ->
         ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
 
-pboughtSoldValue :: Term s (PAsset :--> PAsset :--> PBoughtSold :--> V1.PValue 'Sorted 'NonZero)
+pboughtSoldValue :: Term s (PAsset :--> PAsset :--> PBoughtSold :--> V1.PValue 'Sorted 'NoGuarantees)
 pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts -> P.do
     bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
     sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
     amnts <- pletFields @["bought", "sold"] boughtSoldAmnts
-    (   ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought ) <>
-        ( V1.psingleton # sold.currencySymbol   # sold.tokenName    # amnts.sold  )  )
+    (   punionWith 
+        # (plam (+))
+        # ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought )
+        # ( V1.psingleton # sold.currencySymbol   # sold.tokenName    # amnts.sold  )  )
 
 newtype PParam (s :: S)
     = PParam
@@ -155,9 +157,9 @@ newtype PParam (s :: S)
             s
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
-                , "virtual" ':= V1.PValue Unsorted Positive -- virtual liqudity, for range pools & sslp  
-                , "weights" ':= V1.PValue Unsorted Positive -- actually inverted weights in the AMM-view
-                , "jumpSizes" ':= V1.PValue Unsorted Positive 
+                , "virtual" ':= V1.PValue 'Unsorted 'Positive -- virtual liqudity, for range pools & sslp  
+                , "weights" ':= V1.PValue 'Unsorted 'Positive -- actually inverted weights in the AMM-view
+                , "jumpSizes" ':= V1.PValue 'Unsorted 'Positive 
                 , "active" ':= PInteger -- TODO consider using PBool
                 ]
             )
@@ -177,7 +179,7 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "anchorPrices" ':= V1.PValue Unsorted Positive
+                , "anchorPrices" ':= V1.PValue 'Unsorted 'Positive
                 ]
             )
         )
@@ -188,56 +190,56 @@ instance DerivePlutusType PDirac
 instance PTryFrom PData (PAsData PDirac)
 instance PTryFrom PData PDirac
 
-newtype PLimit (s :: S)
-    = PLimit
-        ( Term
-            s
-            ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
-                '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
-                , "swap" ':= PSwap
-                ]
-            )
-        )
-    deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
-instance DerivePlutusType PLimit
-    where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData (PAsData PLimit)
-instance PTryFrom PData PLimit
+-- newtype PLimit (s :: S)
+--     = PLimit
+--         ( Term
+--             s
+--             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
+--                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
+--                 , "swap" ':= PSwap
+--                 ]
+--             )
+--         )
+--     deriving stock (Generic)
+--     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+-- instance DerivePlutusType PLimit
+--     where type DPTStrat _ = PlutusTypeData
+-- instance PTryFrom PData (PAsData PLimit)
+-- instance PTryFrom PData PLimit
 
-newtype PPartial (s :: S)
-    = PPartial
-        ( Term
-            s
-            ( PDataRecord
-                '["threadNFT" ':= PIdNFT
-                , "limit" ':= PLimit
-                ]
-            )
-        )
-    deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
-instance DerivePlutusType PPartial
-    where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData (PAsData PPartial)
-instance PTryFrom PData PPartial
+-- newtype PPartial (s :: S)
+--     = PPartial
+--         ( Term
+--             s
+--             ( PDataRecord
+--                 '["threadNFT" ':= PIdNFT
+--                 , "limit" ':= PLimit
+--                 ]
+--             )
+--         )
+--     deriving stock (Generic)
+--     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+-- instance DerivePlutusType PPartial
+--     where type DPTStrat _ = PlutusTypeData
+-- instance PTryFrom PData (PAsData PPartial)
+-- instance PTryFrom PData PPartial
 
-newtype PDiode (s :: S)
-    = PDiode
-        ( Term
-            s
-            ( PDataRecord
-                '["param" ':= PParam
-                , "ranks" ':= V1.PValue Unsorted Positive -- can only swap assets with leq/lt rank
-                ]
-            )
-        )
-    deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
-instance DerivePlutusType PDiode
-    where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData (PAsData PDiode)
-instance PTryFrom PData PDiode
+-- newtype PDiode (s :: S)
+--     = PDiode
+--         ( Term
+--             s
+--             ( PDataRecord
+--                 '["param" ':= PParam
+--                 , "ranks" ':= V1.PValue 'Sorted 'Positive -- can only swap assets with leq/lt rank
+--                 ]
+--             )
+--         )
+--     deriving stock (Generic)
+--     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+-- instance DerivePlutusType PDiode
+--     where type DPTStrat _ = PlutusTypeData
+-- instance PTryFrom PData (PAsData PDiode)
+-- instance PTryFrom PData PDiode
 
 -- TODO consider saving bytes by not nesting the underlying constrs
 data PEuclidDatum (s :: S)

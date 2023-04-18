@@ -18,6 +18,7 @@ import qualified Plutarch.Monadic as P
 import Plutarch.Num
 import Plutarch.Maybe
 import Plutarch.Api.V1.Value qualified as V1
+import Plutarch.Api.V1.AssocMap qualified as AssocMap
 
 import Euclid.Types
 -- import Euclid.Value
@@ -111,3 +112,10 @@ pinHasNFT = phoistAcyclic $ plam $ \nft input ->
 --         f :: Term s (PCurrencyTokensPairList :--> PTokenAmountPairList)
 --         f = plam $ \ccyPairs ->
 --             pmap # (f' #$ pfstBuiltin # ccyPairs) # (pto $ psndBuiltin # ccyPairs)
+
+-- Thanks for not exporting this, Plutarch
+-- | Applies a function to every amount in the map.
+pmapAmounts :: Term s ((PInteger :--> PInteger) :--> PValue k a :--> PValue k 'NoGuarantees)
+pmapAmounts = phoistAcyclic $
+  plam $
+    \f v -> pcon $ PValue $ AssocMap.pmap # plam (AssocMap.pmap # f #) # pto v
