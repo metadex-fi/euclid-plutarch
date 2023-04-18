@@ -149,7 +149,7 @@ pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts
     (   punionWith 
         # (plam (+))
         # ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought )
-        # ( V1.psingleton # sold.currencySymbol   # sold.tokenName    # amnts.sold  )  )
+        # ( V1.psingleton # sold.currencySymbol   # sold.tokenName   # amnts.sold   )  )
 
 newtype PParam (s :: S)
     = PParam

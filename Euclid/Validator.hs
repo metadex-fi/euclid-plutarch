@@ -67,16 +67,16 @@ pothersUnchanged :: Term s ( PAsset
                         :--> V1.PValue 'Sorted 'NoGuarantees 
                         :--> PBool )
 pothersUnchanged = plam $ \boughtAsset soldAsset addedBalances addedValue ->
-    V1.pcheckBinRel
-        # plam (#==)
-        # addedValue
-        #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
+    -- V1.pcheckBinRel
+    --     # plam (#==)
+    --     # addedValue
+    --     #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
 
         -- NOTE: this seems to work as well
-    -- AssocMap.pall # (AssocMap.pall # plam (#== 0)) # pto (
-    --     V1.punionWith # plam (-) # addedValue 
-    --     #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
-    -- )
+    AssocMap.pall # (AssocMap.pall # plam (#== 0)) # pto (
+        V1.punionWith # plam (-) # addedValue 
+        #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
+    )
 
     -- ((pboughtSoldValue # boughtAsset # soldAsset # addedBalances) #== addedValue)
 
