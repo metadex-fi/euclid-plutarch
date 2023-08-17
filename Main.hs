@@ -60,6 +60,7 @@ import Euclid.Types
 import Euclid.Validator
 import Euclid.Minting
 
+
 main :: IO ()
 main = exportMain builders
 
@@ -82,6 +83,7 @@ builders =
     [ insertStaticBuilder "alwaysSucceeds0" (mkValidatorInfo alwaysSucceeds0)
         -- , insertStaticBuilder "alwaysSucceeds1" (mkValidatorInfo alwaysSucceeds1)
     , insertStaticBuilder "alwaysFails" (mkValidatorInfo alwaysFails)
+    , insertStaticBuilder "tracer" (mkValidatorInfo tracer)
     , insertStaticBuilder "matchDatumRedeemer" (mkValidatorInfo matchDatumRedeemer)
     , insertStaticBuilder "unmatchDatumRedeemer" (mkValidatorInfo unmatchDatumRedeemer)
     , insertStaticBuilder "matchAlways" (mkValidatorInfo matchAlways)

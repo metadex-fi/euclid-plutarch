@@ -47,8 +47,10 @@ pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
 pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
     swpp <- pletFields @["bought", "sold"] swapPrices
     ammp <- pletFields @["bought", "sold"] ammPrices
-    (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
-        ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
+    (   ( pif ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) (pconstant True) (ptraceError "G")) #&&
+        ( pif ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) ) (pconstant True) (ptraceError "H"))   )
+    -- (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
+    --     ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
 
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
@@ -61,22 +63,23 @@ pvalueEquation = plam $ \swapPrices addedBalances -> P.do
 
 -- TODO could do this more efficiently, maybe
 -- NOTE/TODO hacking ambiguous equality measure manually here
+-- NOTE/TODO checking inequality, as sometimes ADA-requirement increases. Check that this does not create exploits
 pothersUnchanged :: Term s ( PAsset 
                         :--> PAsset 
                         :--> PBoughtSold 
                         :--> V1.PValue 'Sorted 'NoGuarantees 
                         :--> PBool )
 pothersUnchanged = plam $ \boughtAsset soldAsset addedBalances addedValue ->
-    -- V1.pcheckBinRel
-    --     # plam (#==)
-    --     # addedValue
-    --     #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
+    V1.pcheckBinRel
+        # plam (#<=)
+        # (pboughtSoldValue # boughtAsset # soldAsset # addedBalances)
+        # addedValue
 
-        -- NOTE: this seems to work as well
-    AssocMap.pall # (AssocMap.pall # plam (#== 0)) # pto (
-        V1.punionWith # plam (-) # addedValue 
-        #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
-    )
+        -- NOTE: this seems to work as well (edited the comparison without testing though)
+    -- AssocMap.pall # (AssocMap.pall # plam (0 #<=)) # pto (
+    --     V1.punionWith # plam (-) # addedValue 
+    --     #$ pboughtSoldValue # boughtAsset # soldAsset # addedBalances
+    -- )
 
     -- ((pboughtSoldValue # boughtAsset # soldAsset # addedBalances) #== addedValue)
 
@@ -130,16 +133,37 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         realSwapPrices  = pcalcSwapPrices # anchorPrices # jumpSizes # swap.prices
         passetForSale   = pboughtAssetForSale # realSwapPrices
 
-    (   ( (pfromData param.active) #== 1                                ) #&&
-        ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
-        ( passetForSale     # oldAmmPrices                              ) #&&
-        ( passetForSale     # newAmmPrices                              ) #&&
-        ( pvalueEquation    # realSwapPrices # addedBalances            ) #&& 
-        ( pothersUnchanged  # swap.boughtAsset 
-                            # swap.soldAsset 
-                            # addedBalances
-                            # addedValue )  
+    -- (   pif ((pfromData param.active) #== 1) (ptraceError "A") $
+    --     pif (dirac' #== (pfield @"dirac" # newDirac)) (ptraceError "B") $
+    --     pif (passetForSale     # oldAmmPrices) (ptraceError "C") $
+    --     pif (passetForSale     # newAmmPrices) (ptraceError "D") $
+    --     pif (pvalueEquation    # realSwapPrices # addedBalances) (ptraceError "E") $
+    --     pif (pothersUnchanged  # swap.boughtAsset 
+    --                             # swap.soldAsset 
+    --                             # addedBalances
+    --                             # addedValue) (ptraceError "F") $ 
+
+    --     (pconstant True))
+    (   ( pif ( (pfromData param.active) #== 1                                ) (pconstant True) (ptraceError "A")) #&&
+        ( pif ( dirac' #== (pfield @"dirac" # newDirac)                       ) (pconstant True) (ptraceError "B")) #&&
+        ( pif ( passetForSale     # oldAmmPrices                              ) (pconstant True) (ptraceError "C")) #&&
+        ( pif ( passetForSale     # newAmmPrices                              ) (pconstant True) (ptraceError "D")) #&&
+        ( pif ( pvalueEquation    # realSwapPrices # addedBalances            ) (pconstant True) (ptraceError "E")) #&& 
+        ( pif ( pothersUnchanged  # swap.boughtAsset 
+                                  # swap.soldAsset 
+                                  # addedBalances
+                                  # addedValue )  (pconstant True) (ptraceError "F")) 
         )
+    -- (   ( (pfromData param.active) #== 1                                ) #&&
+    --     ( dirac' #== (pfield @"dirac" # newDirac)                       ) #&&
+    --     ( passetForSale     # oldAmmPrices                              ) #&&
+    --     ( passetForSale     # newAmmPrices                              ) #&&
+    --     ( pvalueEquation    # realSwapPrices # addedBalances            ) #&& 
+    --     ( pothersUnchanged  # swap.boughtAsset 
+    --                         # swap.soldAsset 
+    --                         # addedBalances
+    --                         # addedValue )  
+    --     )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
 padmin = plam $ \owner ctx -> P.do

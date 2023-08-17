@@ -26,7 +26,12 @@ alwaysSucceeds0 = plam $ \_ _ _ -> popaque $ pcon PUnit
 -- alwaysSucceeds1 = plam $ \_ _ _ -> popaque (pcon PUnit)
 
 alwaysFails :: ClosedTerm PValidator
-alwaysFails = plam $ \_ _ _ -> perror
+alwaysFails = plam $ \_ _ _ -> (ptraceError "tracing an error") --perror
+
+tracer :: ClosedTerm PValidator
+tracer = plam $ \_ _ _ -> P.do
+  (ptrace "tracing")
+  (popaque $ pcon PUnit)
 
 matchDatumRedeemer :: ClosedTerm PValidator
 matchDatumRedeemer = plam $ \d r _ -> pif (d #== r) (popaque $ pcon PUnit) perror

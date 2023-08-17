@@ -16,7 +16,7 @@ ghci> eval $ ppow1 # 20 # 20
 "(ExBudget {exBudgetCPU = ExCPU 13774800, exBudgetMemory = ExMemory 28341},[])"
 -}
 ppow1 :: Term s (PInteger :--> PInteger :--> PInteger) -- cheaper (tied)
-ppow1 = plam $ \b e -> pif (e #< 0) perror $ pif (e #== 0) 1 $ ppow' # b # e
+ppow1 = plam $ \b e -> pif (e #< 0) (ptraceError "power error") $ pif (e #== 0) 1 $ ppow' # b # e
   where 
     ppow' :: Term s (PInteger :--> PInteger :--> PInteger)
     ppow' = pfix #$ plam pow
@@ -29,7 +29,7 @@ ghci> eval $ ppow2 # 20 # 20
 "(ExBudget {exBudgetCPU = ExCPU 13774800, exBudgetMemory = ExMemory 28341},[])"
 -}
 ppow2 :: Term s (PInteger :--> PInteger :--> PInteger) -- cheaper (tied)
-ppow2 = plam $ \b e -> pif (e #< 0) perror $ pif (e #== 0) 1 $ ppow' # b # e
+ppow2 = plam $ \b e -> pif (e #< 0) (ptraceError "power error") $ pif (e #== 0) 1 $ ppow' # b # e
   where 
     ppow' :: Term s (PInteger :--> PInteger :--> PInteger)
     ppow' = phoistAcyclic $ pfix #$ plam pow
@@ -43,7 +43,7 @@ ghci> eval $ ppow3 # 20 # 20
 -}
 -- > too expensive
 -- ppow3 :: Term s (PInteger :--> PInteger :--> PInteger) -- more expensive (tied)
--- ppow3 = plam $ \b e -> pif (e #< 0) perror $ pif (e #== 0) 1 $ ppow' # b # e
+-- ppow3 = plam $ \b e -> pif (e #< 0) (ptraceError "power error") $ pif (e #== 0) 1 $ ppow' # b # e
 --   where 
 --     ppow' :: Term s (PInteger :--> PInteger :--> PInteger)
 --     ppow' = pfix #$ plam pow
@@ -58,7 +58,7 @@ ghci> eval $ ppow4 # 20 # 20
 -}
 -- > too expensive
 -- ppow4 :: Term s (PInteger :--> PInteger :--> PInteger) -- more expensive (tied)
--- ppow4 = plam $ \b e -> pif (e #< 0) perror $ pif (e #== 0) 1 $ ppow' # b # e
+-- ppow4 = plam $ \b e -> pif (e #< 0) (ptraceError "power error") $ pif (e #== 0) 1 $ ppow' # b # e
 --   where 
 --     ppow' :: Term s (PInteger :--> PInteger :--> PInteger)
 --     ppow' = pfix #$ plam pow
