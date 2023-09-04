@@ -157,9 +157,9 @@ newtype PParam (s :: S)
             s
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
-                , "virtual" ':= V1.PValue 'Unsorted 'Positive -- virtual liqudity, for range pools & sslp  
-                , "weights" ':= V1.PValue 'Unsorted 'Positive -- actually inverted weights in the AMM-view
-                , "jumpSizes" ':= V1.PValue 'Unsorted 'Positive 
+                , "virtual" ':= V1.PValue 'Sorted 'Positive -- virtual liqudity, for range pools & sslp  
+                , "weights" ':= V1.PValue 'Sorted 'Positive -- actually inverted weights in the AMM-view
+                , "jumpSizes" ':= V1.PValue 'Sorted 'Positive 
                 , "active" ':= PInteger -- TODO consider using PBool
                 ]
             )
@@ -179,7 +179,7 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "anchorPrices" ':= V1.PValue 'Unsorted 'Positive
+                , "anchorPrices" ':= V1.PValue 'Sorted 'Positive
                 ]
             )
         )
