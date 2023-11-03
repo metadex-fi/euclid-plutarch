@@ -60,13 +60,10 @@ pupdateAnchorPrices = plam $ \boughtAsset soldAsset newAnchors oldAnchors -> P.d
     V1.passertPositive #$ replace # newSold #$ replace # newBought # oldAnchors
 
 pCorrectSigns :: Term s (PBoughtSold :--> PBool)
-pCorrectSigns = plam $ \addedBalances -> -- 0 #< $ pfield @"sold" # addedBalances
-    pif (0 #< $ pfield @"sold" # addedBalances) (pconstant True) (ptraceError "sold <= 0")
+pCorrectSigns = plam $ \addedBalances -> -- 0 #< (pfromData $ pfield @"sold" # addedBalances)
+    pif (0 #< (pfromData $ pfield @"sold" # addedBalances)) (pconstant True) (ptraceError "sold <= 0")
     -- checking that the sold asset is being deposited suffices
-    -- P.do
-    -- added <- pletFields @["bought", "sold"] addedBalances
-    -- (   ( (pfromData added.bought) #<= 0 ) #&&
-    --     ( (pfromData added.sold  ) #>= 0 )   )
+
 
 -- TODO consider rounding-error based trickery (also in other places)
 -- NOTE prices are inverted/selling, so buying decreases amm-price and vice versa
