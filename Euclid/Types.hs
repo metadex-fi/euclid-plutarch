@@ -262,7 +262,7 @@ newtype PSwap (s :: S)
             ( PDataRecord
                 '["boughtAsset" ':= PAsset
                 ,"soldAsset" ':= PAsset
-                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0. inverted.
+                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0. inverted. (actually exponents)
                 ]
             )
         )

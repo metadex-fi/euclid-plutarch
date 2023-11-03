@@ -47,16 +47,48 @@ pcalcSwapPrices_ = phoistAcyclic $ plam $ \anchor js e ->
                     pdiv # (anchor * (pexp_ # js # en)) # (pexp_ # jspp # en)
             )
 
+-- TODO probably not the most efficient way to do this
+pupdateAnchorPrices :: Term s (PAsset :--> PAsset :--> PBoughtSold :--> V1.PValue 'Sorted 'Positive :--> V1.PValue 'Sorted 'Positive)
+pupdateAnchorPrices = plam $ \boughtAsset soldAsset newAnchors oldAnchors -> P.do
+    bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
+    sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
+    new <- pletFields @["bought", "sold"] newAnchors
+    let newBought = V1.psingleton # bought.currencySymbol # bought.tokenName # new.bought
+        newSold = V1.psingleton # sold.currencySymbol # sold.tokenName # new.sold
+        replace = V1.punionWith # (plam (\x _ -> x))
+
+    V1.passertPositive #$ replace # newSold #$ replace # newBought # oldAnchors
+
+pCorrectSigns :: Term s (PBoughtSold :--> PBool)
+pCorrectSigns = plam $ \addedBalances -> -- 0 #< $ pfield @"sold" # addedBalances
+    pif (0 #< $ pfield @"sold" # addedBalances) (pconstant True) (ptraceError "sold <= 0")
+    -- checking that the sold asset is being deposited suffices
+    -- P.do
+    -- added <- pletFields @["bought", "sold"] addedBalances
+    -- (   ( (pfromData added.bought) #<= 0 ) #&&
+    --     ( (pfromData added.sold  ) #>= 0 )   )
+
 -- TODO consider rounding-error based trickery (also in other places)
 -- NOTE prices are inverted/selling, so buying decreases amm-price and vice versa
-pboughtAssetForSale :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
-pboughtAssetForSale = phoistAcyclic $ plam $ \swapPrices ammPrices -> P.do 
+-- previously pboughtAssetForSale
+pPricesFitAmm :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
+pPricesFitAmm = plam $ \swapPrices ammPrices -> P.do 
     swpp <- pletFields @["bought", "sold"] swapPrices
     ammp <- pletFields @["bought", "sold"] ammPrices
-    -- (   ( pif ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) (pconstant True) (ptraceError $"G" <> (pshow $ (pfromData swpp.bought) #- (pfromData ammp.bought)))) #&&
-    --     ( pif ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) ) (pconstant True) (ptraceError $"H" <> (pshow $ (pfromData ammp.sold) #- (pfromData swpp.sold))))   )
-    (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
-        ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
+    (   ( pif ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) (pconstant True) (
+            ptraceError $ " I\n\n" <> 
+            (pshow $ (pfromData swpp.bought)) <> "\n\n" <>
+            (pshow $ (pfromData ammp.bought)) <> "\n\n" <>
+            (pshow $ (pfromData swpp.bought) #- (pfromData ammp.bought))
+        )) #&&
+        ( pif ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) ) (pconstant True) (
+            ptraceError $ " J\n\n" <> 
+            (pshow $ (pfromData swpp.sold)) <> "\n\n" <>
+            (pshow $ (pfromData ammp.sold)) <> "\n\n" <>
+            (pshow $ (pfromData swpp.sold) #- (pfromData ammp.sold))
+        ))   )
+    -- (   ( (pfromData swpp.bought) #<= (pfromData ammp.bought) ) #&&
+    --     ( (pfromData ammp.sold  ) #<= (pfromData swpp.sold  ) )   )
 
  -- TODO explicit fees?
 pvalueEquation :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
@@ -139,31 +171,52 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         addedValue      = V1.punionWith # plam (+) # newValue #$ pmapAmounts # plam negate # oldValue
         addedBalances   = pboughtSoldOf # swap.boughtAsset # swap.soldAsset # addedValue
 
-        oldLiquidity    = virtual #+ (pof' # oldValue)
+        -- oldLiquidity    = virtual #+ (pof' # oldValue)
         newLiquidity    = virtual #+ (pof' # newValue)
 
-        oldAmmPrices    = oldLiquidity #* weights -- NOTE: inverted/selling prices
+        -- oldAmmPrices    = oldLiquidity #* weights -- NOTE: inverted/selling prices
         newAmmPrices    = newLiquidity #* weights -- NOTE: inverted/selling prices
 
         realSwapPrices  = pcalcSwapPrices # anchorPrices # jumpSizes # swap.prices
-        passetForSale   = pboughtAssetForSale # realSwapPrices
+        -- passetForSale   = pboughtAssetForSale # realSwapPrices
 
-        newAnchorPrices = V1.passertPositive #$ pboughtSoldValue # swap.boughtAsset # swap.soldAsset # realSwapPrices
+        newAnchorPrices = pupdateAnchorPrices # swap.boughtAsset # swap.soldAsset # realSwapPrices # dirac.anchorPrices
 
-    (   ( (pfromData param.active) #== 1                                ) #&&
+        -- newAnchorPrices = V1.passertPositive #$ 
+        --     V1.punionWith
+        --         # (plam $ \_ y -> y)
+        --         # dirac.anchorPrices
+        --         #$ pboughtSoldValue # swap.boughtAsset # swap.soldAsset # realSwapPrices
 
-        ( dirac.owner       #== newDirac.owner                          ) #&&
-        ( dirac.threadNFT   #== newDirac.threadNFT                      ) #&&
-        ( dirac.paramNFT    #== newDirac.paramNFT                       ) #&&
-        ( newAnchorPrices   #== newDirac.anchorPrices                   ) #&&
+    -- (   ( (pfromData param.active) #== 1                                ) #&&
 
-        ( passetForSale     # oldAmmPrices                              ) #&&
-        ( passetForSale     # newAmmPrices                              ) #&&
-        ( pvalueEquation    # realSwapPrices # addedBalances            ) #&& 
-        ( pothersUnchanged  # swap.boughtAsset 
-                            # swap.soldAsset 
-                            # addedBalances
-                            # addedValue )  
+    --     ( dirac.owner       #== newDirac.owner                          ) #&&
+    --     ( dirac.threadNFT   #== newDirac.threadNFT                      ) #&&
+    --     ( dirac.paramNFT    #== newDirac.paramNFT                       ) #&&
+    --     ( newAnchorPrices   #== newDirac.anchorPrices                   ) #&&
+
+    --     ( passetForSale     # oldAmmPrices                              ) #&&
+    --     ( passetForSale     # newAmmPrices                              ) #&&
+    --     ( pvalueEquation    # realSwapPrices # addedBalances            ) #&& 
+    --     ( pothersUnchanged  # swap.boughtAsset 
+    --                         # swap.soldAsset 
+    --                         # addedBalances
+    --                         # addedValue )  
+    --     )
+
+    (   ( pif ( (pfromData param.active) #== 1                                ) (pconstant True) (ptraceError "A")) #&&
+
+        ( pif ( dirac.owner         #== newDirac.owner                  ) (pconstant True) (ptraceError "B")) #&&
+        ( pif ( dirac.threadNFT     #== newDirac.threadNFT              ) (pconstant True) (ptraceError "C")) #&&
+        ( pif ( dirac.paramNFT      #== newDirac.paramNFT               ) (pconstant True) (ptraceError "D")) #&&
+        ( pif ( newAnchorPrices     #== newDirac.anchorPrices           ) (pconstant True) (ptraceError "E")) #&&
+        ( pif ( pCorrectSigns       # addedBalances                     ) (pconstant True) (ptraceError "F")) #&&
+        ( pif ( pPricesFitAmm       # realSwapPrices # newAmmPrices     ) (pconstant True) (ptraceError "G")) #&&
+        ( pif ( pvalueEquation      # realSwapPrices # addedBalances    ) (pconstant True) (ptraceError "H")) #&& 
+        ( pif ( pothersUnchanged    # swap.boughtAsset 
+                                    # swap.soldAsset 
+                                    # addedBalances
+                                    # addedValue )  (pconstant True) (ptraceError "F")) 
         )
 
 padmin :: Term s ((PAsData V1.PPubKeyHash) :--> PScriptContext :--> PBool)
