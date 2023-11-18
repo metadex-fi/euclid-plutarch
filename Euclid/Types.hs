@@ -151,6 +151,15 @@ pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts
         # ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought )
         # ( V1.psingleton # sold.currencySymbol   # sold.tokenName   # amnts.sold   )  )
 
+pboughtSoldValue_ :: Term s (PAsset :--> PAsset :--> PInteger :--> PInteger :--> V1.PValue 'Sorted 'NoGuarantees)
+pboughtSoldValue_ = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtAmnt soldAmnt -> P.do
+    bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
+    sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
+    (   punionWith 
+        # (plam (+))
+        # ( V1.psingleton # bought.currencySymbol # bought.tokenName # boughtAmnt )
+        # ( V1.psingleton # sold.currencySymbol   # sold.tokenName   # soldAmnt   )  )
+
 newtype PParam (s :: S)
     = PParam
         ( Term
@@ -159,7 +168,7 @@ newtype PParam (s :: S)
                 '[ "owner" ':= V1.PPubKeyHash
                 , "virtual" ':= V1.PValue 'Sorted 'Positive -- virtual liqudity, for range pools & sslp  
                 , "weights" ':= V1.PValue 'Sorted 'Positive -- actually inverted weights in the AMM-view
-                , "jumpSizes" ':= V1.PValue 'Sorted 'Positive 
+                , "jumpSize" ':= PInteger -- TODO consider using PPositive 
                 , "active" ':= PInteger -- TODO consider using PBool
                 ]
             )
@@ -262,7 +271,7 @@ newtype PSwap (s :: S)
             ( PDataRecord
                 '["boughtAsset" ':= PAsset
                 ,"soldAsset" ':= PAsset
-                ,"prices" ':= PBoughtSold -- denominated in some nonexistent currency A0. inverted. (actually exponents)
+                ,"exponent" ':= PInteger
                 ]
             )
         )
