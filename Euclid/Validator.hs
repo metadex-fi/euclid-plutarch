@@ -115,8 +115,8 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         addedBought     = pvalueOfAsset # swap.boughtAsset # addedAmnts
         addedSold       = pvalueOfAsset # swap.soldAsset # addedAmnts
 
-        newAmmBought    = (virtualBought #+ (pvalueOfBought # newValue)) #* weightBought    -- NOTE: inverted/selling price
-        newAmmSold      = (virtualSold #+ (pvalueOfSold # newValue)) #* weightSold          -- NOTE: inverted/selling price
+        newAmmBought    = (virtualBought #+ addedBought) #* weightBought    -- NOTE: inverted/selling price
+        newAmmSold      = (virtualSold #+ addedSold) #* weightSold          -- NOTE: inverted/selling price
 
         oldAnchorBought = pvalueOfBought # dirac.anchorPrices   -- NOTE: inverted/selling price
         oldAnchorSold   = pvalueOfSold # dirac.anchorPrices     -- NOTE: inverted/selling price
