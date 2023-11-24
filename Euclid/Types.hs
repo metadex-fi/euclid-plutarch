@@ -177,7 +177,7 @@ newtype PParam (s :: S)
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
                 , "virtual" ':= V1.PValue 'Sorted 'Positive -- virtual liqudity, for range pools & sslp  
-                , "weights" ':= V1.PValue 'Sorted 'Positive -- NOTE: inverted weights in the amm-view
+                , "weights" ':= V1.PValue 'Sorted 'Positive
                 , "jumpSizes" ':= V1.PValue 'Sorted 'Positive
                 , "active" ':= PInteger -- TODO consider using PBool
                 ]

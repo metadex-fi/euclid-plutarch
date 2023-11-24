@@ -96,6 +96,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         jsppBought      = jsBought #+ 1
         jsppSold        = jsSold #+ 1
 
+        -- those exps below will naturally fail due to infinite looping if exponent is negative, as they should
         jseBought       = pexp # jsBought # swap.boughtExp
         jseSold         = pexp # jsSold # swap.soldExp
 
@@ -115,25 +116,22 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         addedBought     = pvalueOfAsset # swap.boughtAsset # addedAmnts
         addedSold       = pvalueOfAsset # swap.soldAsset # addedAmnts
 
-        newAmmBought    = (virtualBought #+ addedBought) #* weightBought    -- NOTE: inverted/selling price
-        newAmmSold      = (virtualSold #+ addedSold) #* weightSold          -- NOTE: inverted/selling price
-
         oldAnchorBought = pvalueOfBought # dirac.anchorPrices   -- NOTE: inverted/selling price
         oldAnchorSold   = pvalueOfSold # dirac.anchorPrices     -- NOTE: inverted/selling price
 
-        ancJsppeBought  = oldAnchorBought #* jsppeBought
+        ancJseBought    = oldAnchorBought #* jseBought
         ancJsppeSold    = oldAnchorSold #* jsppeSold
 
         -- aka currently used spotprices, rounded down (we don't need those to be exact, otherwise this would be incorrect)
-        newAnchorBought = pdiv # ancJsppeBought # jseBought
-        newAnchorSold   = pdiv # ancJsppeSold   # jseSold
+        newAnchorBought = pdiv # ancJseBought # jsppeBought
+        newAnchorSold   = pdiv # ancJsppeSold # jseSold
         newAnchorPrices = pupdateAnchorPrices # swap.boughtAsset # swap.soldAsset # newAnchorBought # newAnchorSold # dirac.anchorPrices
 
         -- checks
         correctSigns    = pif (0 #< addedSold) (pconstant True) (ptraceError "sold <= 0") -- checking that the sold asset is being deposited suffices
-        valueEquation   = pif ((-addedBought * ancJsppeSold * jseBought) #<= (addedSold * ancJsppeBought * jseSold)) (pconstant True) (ptraceError "value equation")
-        priceFitBought  = pif (ancJsppeBought #<= (newAmmBought #* jseBought)) (pconstant True) (ptraceError "price fit bought")
-        priceFitSold    = pif ((newAmmSold #* jseSold) #<= ancJsppeSold) (pconstant True) (ptraceError "price fit sold")
+        valueEquation   = pif ((-addedBought * ancJsppeSold * jsppeBought) #<= (addedSold * ancJseBought * jseSold)) (pconstant True) (ptraceError "value equation")
+        priceFitBought  = pif ((virtualBought #+ addedBought) #* jsppeBought #<= weightBought * ancJseBought) (pconstant True) (ptraceError "price fit bought")
+        priceFitSold    = pif ((virtualSold #+ addedSold) #* jseSold #<= weightSold * ancJsppeSold) (pconstant True) (ptraceError "price fit sold")
 
     -- (   ( (pfromData param.active) #== 1                                ) #&&
 
