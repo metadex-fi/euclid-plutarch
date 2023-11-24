@@ -56,70 +56,75 @@ newtype PIdNFT (s :: S) = PIdNFT (Term s PAsset)
 instance DerivePlutusType PIdNFT where type DPTStrat _ = PlutusTypeNewtype
 instance PTryFrom PData PIdNFT
 
-newtype PBoughtSold (s :: S)
-    = PBoughtSold
-        ( Term
-            s
-            ( PDataRecord
-                '[ "bought" ':= PInteger
-                , "sold" ':= PInteger
-                ]
-            )
-        )
-    deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PPartialOrd, POrd, PShow)
-instance DerivePlutusType PBoughtSold where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData PBoughtSold
-instance PTryFrom PData (PAsData PBoughtSold)
+-- newtype PBoughtSold (s :: S)
+--     = PBoughtSold
+--         ( Term
+--             s
+--             ( PDataRecord
+--                 '[ "bought" ':= PInteger
+--                 , "sold" ':= PInteger
+--                 ]
+--             )
+--         )
+--     deriving stock (Generic)
+--     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PPartialOrd, POrd, PShow)
+-- instance DerivePlutusType PBoughtSold where type DPTStrat _ = PlutusTypeData
+-- instance PTryFrom PData PBoughtSold
+-- instance PTryFrom PData (PAsData PBoughtSold)
 
-pmkBoughtSold :: Term s (PInteger :--> PInteger :--> PBoughtSold)
-pmkBoughtSold = phoistAcyclic $ plam $ \bought sold -> pcon $ PBoughtSold $ 
-        pdcons @"bought" @PInteger # (pdata bought) 
-    #$  pdcons @"sold"   @PInteger # (pdata sold) 
-    #   pdnil
+-- pmkBoughtSold :: Term s (PInteger :--> PInteger :--> PBoughtSold)
+-- pmkBoughtSold = phoistAcyclic $ plam $ \bought sold -> pcon $ PBoughtSold $ 
+--         pdcons @"bought" @PInteger # (pdata bought) 
+--     #$  pdcons @"sold"   @PInteger # (pdata sold) 
+--     #   pdnil
 
-papplyToBS :: Term s ((PInteger :--> PInteger :--> PInteger) :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold)
-papplyToBS = phoistAcyclic $ plam $ \f x' y' -> P.do 
-    x <- pletFields @["bought", "sold"] x'
-    y <- pletFields @["bought", "sold"] y'
-    ( pmkBoughtSold # (f # x.bought # y.bought) #$ f # x.sold # y.sold )
+-- papplyToBS :: Term s ((PInteger :--> PInteger :--> PInteger) :--> PBoughtSold :--> PBoughtSold :--> PBoughtSold)
+-- papplyToBS = phoistAcyclic $ plam $ \f x' y' -> P.do 
+--     x <- pletFields @["bought", "sold"] x'
+--     y <- pletFields @["bought", "sold"] y'
+--     ( pmkBoughtSold # (f # x.bought # y.bought) #$ f # x.sold # y.sold )
+
+-- pincrement :: Term s (PBoughtSold :--> PBoughtSold)
+-- pincrement = plam $ \x' -> P.do 
+--     x <- pletFields @["bought", "sold"] x'
+--     ( pmkBoughtSold # (x.bought + 1) # (x.sold + 1) )
 
 -- TODO phoistAcyclic below?
-instance PNum PBoughtSold where
-    x #+ y = papplyToBS # (plam (+)) # x # y
-    x #- y = papplyToBS # (plam (-)) # x # y
-    x #* y = papplyToBS # (plam (*)) # x # y
-    pnegate = phoistAcyclic $ plam $ \x -> pmkBoughtSold 
-        # (pnegate #$ pfield @"bought" # x) 
-        #$ pnegate #$ pfield @"sold" # x
-    pabs = phoistAcyclic $ plam $ \x -> pmkBoughtSold 
-        # (pabs #$ pfield @"bought" # x) 
-        #$ pabs #$ pfield @"sold" # x
-    psignum = ptraceError "signum not implemented"
-    -- phoistAcyclic $ plam $ \x' -> P.do 
-    --     x <- pletFields @["bought", "sold"] x'
-    --     plet (psignum # x.bought) $ \bsig ->
-    --         pif ( bsig #== (psignum # x.sold) )
-    --             ( bsig )
-    --             ( ptraceError "ill-defined signum" )
-    pfromInteger x = ptraceError "should not create PBoughtSold from a single Integer"
+-- instance PNum PBoughtSold where
+--     x #+ y = papplyToBS # (plam (+)) # x # y
+--     x #- y = papplyToBS # (plam (-)) # x # y
+--     x #* y = papplyToBS # (plam (*)) # x # y
+--     pnegate = phoistAcyclic $ plam $ \x -> pmkBoughtSold 
+--         # (pnegate #$ pfield @"bought" # x) 
+--         #$ pnegate #$ pfield @"sold" # x
+--     pabs = phoistAcyclic $ plam $ \x -> pmkBoughtSold 
+--         # (pabs #$ pfield @"bought" # x) 
+--         #$ pabs #$ pfield @"sold" # x
+--     psignum = ptraceError "signum not implemented"
+--     -- phoistAcyclic $ plam $ \x' -> P.do 
+--     --     x <- pletFields @["bought", "sold"] x'
+--     --     plet (psignum # x.bought) $ \bsig ->
+--     --         pif ( bsig #== (psignum # x.sold) )
+--     --             ( bsig )
+--     --             ( ptraceError "ill-defined signum" )
+--     pfromInteger x = ptraceError "should not create PBoughtSold from a single Integer"
 
-pdivides :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
-pdivides = plam $ \x' y' -> P.do
-    x <- pletFields @["bought", "sold"] x'
-    y <- pletFields @["bought", "sold"] y'
-    (   ( prem # (pfromData y.bought) # (pfromData x.bought) #== 0 ) #&& 
-        ( prem # (pfromData y.sold)   # (pfromData x.sold)   #== 0 )   )
+-- pdivides :: Term s (PBoughtSold :--> PBoughtSold :--> PBool)
+-- pdivides = plam $ \x' y' -> P.do
+--     x <- pletFields @["bought", "sold"] x'
+--     y <- pletFields @["bought", "sold"] y'
+--     (   ( prem # (pfromData y.bought) # (pfromData x.bought) #== 0 ) #&& 
+--         ( prem # (pfromData y.sold)   # (pfromData x.sold)   #== 0 )   )
 
-pexp :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold)
-pexp = plam $ \b' e' -> P.do
-    b <- pletFields @["bought", "sold"] b'
-    e <- pletFields @["bought", "sold"] e'
-    ( pmkBoughtSold # (pexp_ # (pfromData b.bought) # (pfromData e.bought)) 
-                   #$ pexp_ # (pfromData b.sold) # (pfromData e.sold) )
+-- pexp :: Term s (PBoughtSold :--> PBoughtSold :--> PBoughtSold)
+-- pexp = plam $ \b' e' -> P.do
+--     b <- pletFields @["bought", "sold"] b'
+--     e <- pletFields @["bought", "sold"] e'
+--     ( pmkBoughtSold # (pexp_ # (pfromData b.bought) # (pfromData e.bought)) 
+--                    #$ pexp_ # (pfromData b.sold) # (pfromData e.sold) )
 
-pexp_ :: Term s (PInteger :--> PInteger :--> PInteger)
-pexp_ = phoistAcyclic $ pfix #$ plam $ \self b e -> 
+pexp :: Term s (PInteger :--> PInteger :--> PInteger)
+pexp = phoistAcyclic $ pfix #$ plam $ \self b e -> 
     pif (e #== 0)
         ( 1 )
         ( plet (self # b #$ pdiv # e # 2) $ \b2 ->
@@ -131,28 +136,33 @@ pexp_ = phoistAcyclic $ pfix #$ plam $ \self b e ->
 --   pquot = papplyToBS # pquot
 --   prem = papplyToBS # prem
 
-pvalueOfAsset :: Term s (V1.PValue anyKey anyAmount :--> PAsset :--> PInteger)
-pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
+pvalueOfAsset :: Term s (PAsset :--> V1.PValue anyKey anyAmount :--> PInteger)
+pvalueOfAsset = phoistAcyclic $ plam $ \asset' value -> P.do
     asset <- pletFields @["currencySymbol", "tokenName"] asset'
     ( V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
-pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue anyKey anyAmount :--> PBoughtSold)
-pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
-    plet (pvalueOfAsset # value) $ \pofAsset ->
-        ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
+-- pvalueOfAsset :: Term s (V1.PValue anyKey anyAmount :--> PAsset :--> PInteger)
+-- pvalueOfAsset = phoistAcyclic $ plam $ \value asset' -> P.do
+--     asset <- pletFields @["currencySymbol", "tokenName"] asset'
+--     ( V1.pvalueOf # value # asset.currencySymbol # asset.tokenName )
 
-pboughtSoldValue :: Term s (PAsset :--> PAsset :--> PBoughtSold :--> V1.PValue 'Sorted 'NoGuarantees)
-pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts -> P.do
-    bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
-    sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
-    amnts <- pletFields @["bought", "sold"] boughtSoldAmnts
-    (   punionWith 
-        # (plam (+))
-        # ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought )
-        # ( V1.psingleton # sold.currencySymbol   # sold.tokenName   # amnts.sold   )  )
+-- pboughtSoldOf :: Term s (PAsset :--> PAsset :--> V1.PValue anyKey anyAmount :--> PBoughtSold)
+-- pboughtSoldOf = phoistAcyclic $ plam $ \bought sold value -> 
+--     plet (pvalueOfAsset # value) $ \pofAsset ->
+--         ( pmkBoughtSold # (pofAsset # bought) #$ pofAsset # sold )
 
-pboughtSoldValue_ :: Term s (PAsset :--> PAsset :--> PInteger :--> PInteger :--> V1.PValue 'Sorted 'NoGuarantees)
-pboughtSoldValue_ = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtAmnt soldAmnt -> P.do
+-- pboughtSoldValue :: Term s (PAsset :--> PAsset :--> PBoughtSold :--> V1.PValue 'Sorted 'NoGuarantees)
+-- pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtSoldAmnts -> P.do
+--     bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
+--     sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
+--     amnts <- pletFields @["bought", "sold"] boughtSoldAmnts
+--     (   punionWith 
+--         # (plam (+))
+--         # ( V1.psingleton # bought.currencySymbol # bought.tokenName # amnts.bought )
+--         # ( V1.psingleton # sold.currencySymbol   # sold.tokenName   # amnts.sold   )  )
+
+pboughtSoldValue :: Term s (PAsset :--> PAsset :--> PInteger :--> PInteger :--> V1.PValue 'Sorted 'NoGuarantees)
+pboughtSoldValue = phoistAcyclic $ plam $ \boughtAsset soldAsset boughtAmnt soldAmnt -> P.do
     bought <- pletFields @["currencySymbol", "tokenName"] boughtAsset
     sold <- pletFields @["currencySymbol", "tokenName"] soldAsset
     (   punionWith 
@@ -167,8 +177,8 @@ newtype PParam (s :: S)
             ( PDataRecord -- TODO reconsider Sorted vs. Unsorted below
                 '[ "owner" ':= V1.PPubKeyHash
                 , "virtual" ':= V1.PValue 'Sorted 'Positive -- virtual liqudity, for range pools & sslp  
-                , "weights" ':= V1.PValue 'Sorted 'Positive -- actually inverted weights in the AMM-view
-                , "jumpSize" ':= PInteger -- TODO consider using PPositive 
+                , "weights" ':= V1.PValue 'Sorted 'Positive -- NOTE: inverted weights in the amm-view
+                , "jumpSizes" ':= V1.PValue 'Sorted 'Positive
                 , "active" ':= PInteger -- TODO consider using PBool
                 ]
             )
@@ -188,7 +198,7 @@ newtype PDirac (s :: S)
                 '["owner" ':= V1.PPubKeyHash -- TODO compare later to deducing this
                 , "threadNFT" ':= PIdNFT
                 , "paramNFT" ':= PIdNFT -- TODO consider hash of owner/tokenname/hash of NFT/...
-                , "anchorPrices" ':= V1.PValue 'Sorted 'Positive
+                , "anchorPrices" ':= V1.PValue 'Sorted 'Positive -- NOTE inverted aka selling-prices
                 ]
             )
         )
@@ -263,6 +273,23 @@ instance DerivePlutusType PEuclidDatum where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PEuclidDatum
 instance PTryFrom PData (PAsData PEuclidDatum)
 
+-- WIP
+-- newtype PPartialSwap (s :: S)
+--     = PPartialSwap
+--         ( Term
+--             s
+--             ( PDataRecord
+--                 '[ "exponent"   ':= PInteger
+--                 , "bought"      ':= PInteger
+--                 , "sold"        ':= PInteger
+--                 ]
+--             )
+--         )
+--     deriving stock (Generic)
+--     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+-- instance DerivePlutusType PPartialSwap where type DPTStrat _ = PlutusTypeData
+-- instance PTryFrom PData (PAsData PPartialSwap)
+-- instance PTryFrom PData PPartialSwap
 
 newtype PSwap (s :: S)
     = PSwap
@@ -271,14 +298,14 @@ newtype PSwap (s :: S)
             ( PDataRecord
                 '["boughtAsset" ':= PAsset
                 ,"soldAsset" ':= PAsset
-                ,"exponent" ':= PInteger
+                ,"boughtExp" ':= PInteger
+                ,"soldExp" ':= PInteger
                 ]
             )
         )
     deriving stock (Generic)
     deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
-instance DerivePlutusType PSwap
-    where type DPTStrat _ = PlutusTypeData
+instance DerivePlutusType PSwap where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData (PAsData PSwap)
 instance PTryFrom PData PSwap
 
