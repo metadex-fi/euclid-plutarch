@@ -130,8 +130,8 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         -- checks
         correctSigns    = pif (0 #< addedSold) (pconstant True) (ptraceError "sold <= 0") -- checking that the sold asset is being deposited suffices
         valueEquation   = pif ((-addedBought * ancJsppeSold * jsppeBought) #<= (addedSold * ancJseBought * jseSold)) (pconstant True) (ptraceError "value equation")
-        priceFitBought  = pif ((virtualBought #+ addedBought) #* jsppeBought #<= weightBought * ancJseBought) (pconstant True) (ptraceError "price fit bought")
-        priceFitSold    = pif ((virtualSold #+ addedSold) #* jseSold #<= weightSold * ancJsppeSold) (pconstant True) (ptraceError "price fit sold")
+        priceFitBought  = pif ((virtualBought + addedBought) * jsppeBought * weightBought #<= ancJseBought) (pconstant True) (ptraceError "price fit bought")
+        priceFitSold    = pif ((virtualSold + addedSold) * jseSold * weightSold #<= ancJsppeSold) (pconstant True) (ptraceError "price fit sold")
 
     -- (   ( (pfromData param.active) #== 1                                ) #&&
 
