@@ -180,6 +180,7 @@ newtype PParam (s :: S)
                 , "weights" ':= V1.PValue 'Sorted 'Positive
                 , "jumpSizes" ':= V1.PValue 'Sorted 'Positive
                 , "active" ':= PInteger -- TODO consider using PBool
+                , "minAda" ':= PInteger
                 ]
             )
         )

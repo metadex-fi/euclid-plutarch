@@ -83,7 +83,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
 
     PParamDatum param' <- pmatch $ punpackEuclidDatum #$ pfield @"datum" # refTxO
 
-    param <- pletFields @["virtual", "weights", "jumpSizes", "active"] $ pfield @"param" # param'
+    param <- pletFields @["virtual", "weights", "jumpSizes", "active", "minAda"] $ pfield @"param" # param'
     swap <- pletFields @["boughtAsset", "soldAsset", "boughtExp", "soldExp"] swap'
 
     -- TODO vs. plets
@@ -113,8 +113,11 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         newValue        = newTxO.value
 
         addedAmnts      = V1.punionWith # plam (+) # newValue #$ pmapAmounts # plam negate # oldValue
-        addedBought     = pvalueOfAsset # swap.boughtAsset # addedAmnts
+        addedBought     = pvalueOfAsset # swap.boughtAsset # addedAmnts -- TODO could probably instead just use the newValues
         addedSold       = pvalueOfAsset # swap.soldAsset # addedAmnts
+
+        newValueBought  = pvalueOfAsset # swap.boughtAsset # newValue
+        newValueSold    = pvalueOfAsset # swap.soldAsset # newValue
 
         oldAnchorBought = pvalueOfBought # dirac.anchorPrices   -- NOTE: inverted/selling price
         oldAnchorSold   = pvalueOfSold # dirac.anchorPrices     -- NOTE: inverted/selling price
@@ -130,8 +133,11 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         -- checks
         correctSigns    = pif (0 #< addedSold) (pconstant True) (ptraceError "sold <= 0") -- checking that the sold asset is being deposited suffices
         valueEquation   = pif ((-addedBought * ancJsppeSold * jsppeBought) #<= (addedSold * ancJseBought * jseSold)) (pconstant True) (ptraceError "value equation")
-        priceFitBought  = pif ((virtualBought + addedBought) * jsppeBought * weightBought #<= ancJseBought) (pconstant True) (ptraceError "price fit bought")
-        priceFitSold    = pif ((virtualSold + addedSold) * jseSold * weightSold #<= ancJsppeSold) (pconstant True) (ptraceError "price fit sold")
+        priceFitBought  = pif (ancJseBought #<= (virtualBought + newValueBought) * jsppeBought * weightBought) (pconstant True) (ptraceError "price fit bought")
+        priceFitSold    = pif ((virtualSold + newValueSold) * jseSold * weightSold #<= ancJsppeSold) (pconstant True) (ptraceError "price fit sold")
+        lockedAdaKept   = pif ((V1.plovelaceValueOf # addedAmnts) #< 0) 
+                                (pif ((V1.plovelaceValueOf # newValue) #< param.minAda) (ptraceError "minAda") (pconstant True))
+                                (pconstant True)
 
     -- (   ( (pfromData param.active) #== 1                                ) #&&
 
@@ -160,6 +166,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
         ( priceFitBought    ) #&&
         ( priceFitSold      ) #&&
         ( valueEquation     ) #&& 
+        ( lockedAdaKept     ) #&& 
 
         ( pif ( pothersUnchanged    # swap.boughtAsset 
                                     # swap.soldAsset 
