@@ -11,7 +11,7 @@ import Plutarch.Api.V2 --(PValidator, PScriptContext)
 import Plutarch.Prelude --(PUnit (PUnit), PData, (:-->), POpaque, perror, (#==), pconstant, pif, PBuiltinList(PNil, PCons), pmatch, pfield, PMaybe(PNothing), pany)
 import Plutarch.Builtin --(pasInt)
 import Plutarch.Positive
-import Plutarch.Rational
+-- import Plutarch.Rational
 import Plutarch.DataRepr
 import qualified PlutusCore as PLC
 import Plutarch.Unsafe (punsafeBuiltin)
@@ -21,6 +21,7 @@ import qualified Plutarch.Api.V1.AssocMap as PMap
 import qualified Plutarch.Monadic as P
 import Plutarch.Num
 import Plutarch.Maybe
+import Plutarch.Unsafe (punsafeDowncast)
 
 newtype PAsset (s :: S)
     = PAsset
@@ -123,12 +124,113 @@ instance PTryFrom PData PIdNFT
 --     ( pmkBoughtSold # (pexp_ # (pfromData b.bought) # (pfromData e.bought)) 
 --                    #$ pexp_ # (pfromData b.sold) # (pfromData e.sold) )
 
-pexp :: Term s (PInteger :--> PInteger :--> PInteger)
+-- pexp :: Term s (PInteger :--> PInteger :--> PInteger)
+-- pexp = phoistAcyclic $ pfix #$ plam $ \self b e -> 
+--     pif (e #== 0)
+--         ( 1 )
+--         ( plet (self # b #$ pdiv # e # 2) $ \b2 ->
+--             b2 * b2 * (pif ((pmod # e # 2) #== 0) 1 b) )
+
+-- from PRational
+data PJumpsize s
+  = PJumpsize (Term s PInteger) (Term s PInteger)
+  deriving stock (Generic)
+  deriving anyclass (PlutusType)
+
+instance DerivePlutusType PJumpsize where type DPTStrat _ = PlutusTypeScott
+
+-- preduce :: Term s (PRational :--> PRational)
+-- preduce = phoistAcyclic $
+--   plam $ \x -> unTermCont $ do
+--     PRational xn xd' <- tcont $ pmatch x
+--     xd <- tcont . plet $ pto xd'
+--     r <- tcont . plet $ pgcd # xn # xd
+--     s <- tcont . plet $ psignum # xd
+--     pure . pcon $ PRational (s * pdiv # xn # r) $ punsafeDowncast $ s * pdiv # xd # r
+
+instance PNum PJumpsize where
+  x' #+ y' = ptraceError "not implemented"
+    -- phoistAcyclic
+    --   ( plam $ \x y -> unTermCont $ do
+    --       PJumpsize xn xd' <- tcont $ pmatch x
+    --       PJumpsize yn yd' <- tcont $ pmatch y
+    --       xd <- tcont $ plet xd'
+    --       yd <- tcont $ plet yd'
+    --       pure $ pcon
+    --         $ PJumpsize (xn * yd + yn * xd)
+    --         $ punsafeDowncast
+    --         $ xd * yd
+    --   )
+    --   # x'
+    --   # y'
+
+  -- TODO (Optimize): Could this be optimized with an impl in terms of `#+`.
+  x' #- y' = ptraceError "not implemented"
+    -- phoistAcyclic
+    --   ( plam $ \x y -> unTermCont $ do
+    --       PJumpsize xn xd' <- tcont $ pmatch x
+    --       PJumpsize yn yd' <- tcont $ pmatch y
+    --       xd <- tcont $ plet xd'
+    --       yd <- tcont $ plet yd'
+    --       pure $ pcon
+    --         $ PJumpsize (xn * yd - yn * xd)
+    --         $ punsafeDowncast
+    --         $ xd * yd
+    --   )
+    --   # x'
+    --   # y'
+
+  x' #* y' =
+    phoistAcyclic
+      ( plam $ \x y -> unTermCont $ do
+          PJumpsize xn xd <- tcont $ pmatch x
+          PJumpsize yn yd <- tcont $ pmatch y
+          pure $ pcon $ PJumpsize (xn * yn) (xd * yd)
+      )
+      # x'
+      # y'
+
+  pnegate = ptraceError "not implemented"
+    -- phoistAcyclic $
+    --   plam $ \x ->
+    --     pmatch x $ \(PJumpsize xn xd) ->
+    --       pcon $ PJumpsize (negate xn) xd
+
+  pabs = ptraceError "not implemented"
+    -- phoistAcyclic $
+    --   plam $ \x ->
+    --     pmatch x $ \(PJumpsize xn xd) ->
+    --       pcon $ PJumpsize (abs xn) (abs xd)
+
+  psignum = ptraceError "not implemented"
+    -- phoistAcyclic $
+    --   plam $ \x' -> plet x' $ \x ->
+    --     pif
+    --       (x #== 0)
+    --       0
+    --       $ pif
+    --         (x #< 0)
+    --         (-1)
+    --         1
+
+  -- not implemented to prevent accidents
+  pfromInteger n = ptraceError "not implemented" -- pcon $ PJumpsize ((fromInteger n) + 1) (fromInteger n)
+
+pfromJumpsize :: Term s (PInteger :--> PJumpsize)
+pfromJumpsize = phoistAcyclic $ plam $ \n -> pcon $ PJumpsize (n + 1) n
+
+pjumpsizePlusOne :: Term s (PJumpsize :--> PInteger)
+pjumpsizePlusOne = phoistAcyclic $ plam $ \x -> pmatch x $ \(PJumpsize n _) -> n
+
+pjumpsize :: Term s (PJumpsize :--> PInteger)
+pjumpsize = phoistAcyclic $ plam $ \x -> pmatch x $ \(PJumpsize _ d) -> d
+
+pexp :: Term s (PJumpsize :--> PInteger :--> PJumpsize)
 pexp = phoistAcyclic $ pfix #$ plam $ \self b e -> 
     pif (e #== 0)
-        ( 1 )
+        ( pcon $ PJumpsize 1 1 )
         ( plet (self # b #$ pdiv # e # 2) $ \b2 ->
-            b2 * b2 * (pif ((pmod # e # 2) #== 0) 1 b) )
+            pif ((pmod # e # 2) #== 0) (b2 * b2) (b2 * b2 * b) )
 
 -- instance PIntegral PBoughtSold where
 --   pdiv = papplyToBS # pdiv
