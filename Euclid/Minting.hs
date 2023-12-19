@@ -53,7 +53,7 @@ peuclidMinting = phoistAcyclic $ plam $ \_ ctx -> P.do
                         # ( plam $ \tkn -> pnot #$ (pto $ pfromData $ pfstBuiltin # tkn) #== owner )
                         # tkns )
 
--- TODO compare with old version (probably more efficient, but dysfunctional rn)
+-- TODO compare with old version (probably more efficient, but dysfunctional rn - update: in what way?)
         -- hash supposed owner until it matches first tkn, then pop, repeat with next one, until all passed
         -- f :: Term s (PByteString :--> PBuiltinList (PBuiltinPair (PAsData V1.PTokenName) (PAsData PInteger)) :--> POpaque)
         -- f = pfix #$ plam $ \self owner tkns ->
