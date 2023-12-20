@@ -43,6 +43,7 @@ pupdateAnchorPrices = plam $ \boughtAsset soldAsset newAncBought newAncSold oldA
 -- NOTE/TODO hacking ambiguous equality measure manually here
 -- NOTE/TODO checking inequality, as sometimes ADA-requirement increases. Check that this does not create exploits 
 --              -> changed to equality because we're ensuring minAda now
+-- TODO probably not the most efficient way to do this
 pothersUnchanged :: Term s ( PAsset 
                         :--> PAsset 
                         :--> PInteger
@@ -171,7 +172,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
 
                         newValueAda         = V1.plovelaceValueOf # newTxO.value
                         newActualLiqBought  = virtualBought #+ newBalBought
-                        newActualLiqSold    = virtualSold   #+ newBalBought
+                        newActualLiqSold    = virtualSold   #+ newBalSold
 
                         -- TODO probably not the most efficient way to do this
                         addedAmnts          = V1.punionWith # plam (+) # newTxO.value #$ pmapAmounts # plam negate # oldTxO.value
@@ -179,28 +180,42 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
                         addedSold           = newBalSold #- oldBalSold
 
 
-                    (   ( (pfromData param.active) #== 1                ) #&&
+                    (   ( pif ((pfromData param.active) #== 1)     (pconstant True) ( ptraceError "not active" )           ) #&&
 
-                        ( dirac.owner       #== newDirac.owner          ) #&&
-                        ( dirac.threadNFT   #== newDirac.threadNFT      ) #&&
-                        ( dirac.paramNFT    #== newDirac.paramNFT       ) #&&
+                        ( pif (dirac.owner       #== newDirac.owner)  (pconstant True) ( ptraceError "owner" )         ) #&&
+                        ( pif (dirac.threadNFT   #== newDirac.threadNFT) (pconstant True) ( ptraceError "threadNFT" )      ) #&&
+                        ( pif (dirac.paramNFT    #== newDirac.paramNFT)  (pconstant True) ( ptraceError "paramNFT" )      ) #&&
 
-                        ( newAnchorPrices   #== newDirac.anchorPrices   ) #&&
+                        ( pif (newAnchorPrices   #== newDirac.anchorPrices) (pconstant True) ( ptraceError "newAnchorPrices" )   ) #&&
 
-                        ( param.minAda      #<= newValueAda             ) #&& 
-                        ( newLiqBought      #<= newActualLiqBought      ) #&&
-                        ( newLiqSold        #<= newActualLiqSold        ) #&&
+                        ( pif (param.minAda      #<= newValueAda) (pconstant True) ( ptraceError "minAda" )             ) #&& 
+                        ( pif (newLiqBought      #<= newActualLiqBought) (pconstant True) ( ptraceError "newLiqBought" )      ) #&&
+                        ( pif (newLiqSold        #<= newActualLiqSold)  (pconstant True) ( ptraceError "newLiqSold" )       ) #&&
 
-                        ( pothersUnchanged  # swap.boughtAsset
+                        ( pif (pothersUnchanged  # swap.boughtAsset
                                             # swap.soldAsset 
                                             # addedBought
                                             # addedSold
-                                            # addedAmnts )
+                                            # addedAmnts) (pconstant True) ( ptraceError "pothersUnchanged" ))
                      )
+                    -- (   ( (pfromData param.active) #== 1                ) #&&
 
+                    --     ( dirac.owner       #== newDirac.owner          ) #&&
+                    --     ( dirac.threadNFT   #== newDirac.threadNFT      ) #&&
+                    --     ( dirac.paramNFT    #== newDirac.paramNFT       ) #&&
 
+                    --     ( newAnchorPrices   #== newDirac.anchorPrices   ) #&&
 
+                    --     ( param.minAda      #<= newValueAda             ) #&& 
+                    --     ( newLiqBought      #<= newActualLiqBought      ) #&&
+                    --     ( newLiqSold        #<= newActualLiqSold        ) #&&
 
+                    --     ( pothersUnchanged  # swap.boughtAsset
+                    --                         # swap.soldAsset 
+                    --                         # addedBought
+                    --                         # addedSold
+                    --                         # addedAmnts )
+                    --  )
 
              )
 
