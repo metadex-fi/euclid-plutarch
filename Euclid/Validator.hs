@@ -41,7 +41,8 @@ pupdateAnchorPrices = plam $ \boughtAsset soldAsset newAncBought newAncSold oldA
 
 -- TODO could do this more efficiently, maybe
 -- NOTE/TODO hacking ambiguous equality measure manually here
--- NOTE/TODO checking inequality, as sometimes ADA-requirement increases. Check that this does not create exploits
+-- NOTE/TODO checking inequality, as sometimes ADA-requirement increases. Check that this does not create exploits 
+--              -> changed to equality because we're ensuring minAda now
 pothersUnchanged :: Term s ( PAsset 
                         :--> PAsset 
                         :--> PInteger
@@ -50,7 +51,7 @@ pothersUnchanged :: Term s ( PAsset
                         :--> PBool )
 pothersUnchanged = plam $ \boughtAsset soldAsset addedBought addedSold addedAmnts ->
     V1.pcheckBinRel
-        # plam (#<=)
+        # plam (#==)
         # (pboughtSoldValue # boughtAsset # soldAsset # addedBought # addedSold)
         # addedAmnts
 
@@ -130,15 +131,18 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
                 plet (pvalueOfBought # param.virtual) $ \virtualBought ->
                 plet (pvalueOfSold # param.virtual) $ \virtualSold ->
 
-                plet (oldTxO.value) $ \oldValue ->
-                plet (newTxO.value) $ \newValue ->
+                plet (pvalueOfAsset # swap.boughtAsset # oldTxO.value) $ \oldBalBought ->
+                plet (pvalueOfAsset # swap.soldAsset   # oldTxO.value) $ \oldBalSold ->
+
+                plet (pvalueOfAsset # swap.boughtAsset # newTxO.value) $ \newBalBought ->
+                plet (pvalueOfAsset # swap.soldAsset   # newTxO.value) $ \newBalSold ->
 
                 plet (pfromJumpsize #$ pvalueOfBought # param.jumpSizes) $ \baseJsreBought ->
                 plet (pfromJumpsize #$ pvalueOfSold # param.jumpSizes) $ \baseJsreSold -> 
 
                 plet ( pcon $ PState 
-                    ( virtualBought #+ (pvalueOfAsset # swap.boughtAsset # oldValue) ) 
-                    ( virtualSold   #+ (pvalueOfAsset # swap.soldAsset   # oldValue) )  
+                    ( virtualBought #+ oldBalBought ) 
+                    ( virtualSold   #+ oldBalSold )  
                     ( pcon $ PJumpsize 1 (pvalueOfBought # dirac.anchorPrices)  ) 
                     ( pcon $ PJumpsize (pvalueOfSold # dirac.anchorPrices) 1    )
                     ) $ \initialState ->
@@ -165,9 +169,14 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
                         newAnchorSold       = pdiv # ancJsppeSold # jseSold
                         newAnchorPrices     = pupdateAnchorPrices # swap.boughtAsset # swap.soldAsset # newAnchorBought # newAnchorSold # dirac.anchorPrices
 
-                        newValueAda         = V1.plovelaceValueOf # newValue
-                        newActualLiqBought  = virtualBought #+ (pvalueOfAsset # swap.boughtAsset # newValue)
-                        newActualLiqSold    = virtualSold   #+ (pvalueOfAsset # swap.soldAsset   # newValue)
+                        newValueAda         = V1.plovelaceValueOf # newTxO.value
+                        newActualLiqBought  = virtualBought #+ newBalBought
+                        newActualLiqSold    = virtualSold   #+ newBalBought
+
+                        -- TODO probably not the most efficient way to do this
+                        addedAmnts          = V1.punionWith # plam (+) # newTxO.value #$ pmapAmounts # plam negate # oldTxO.value
+                        addedBought         = newBalBought #- oldBalBought
+                        addedSold           = newBalSold #- oldBalSold
 
 
                     (   ( (pfromData param.active) #== 1                ) #&&
@@ -182,7 +191,7 @@ pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do
                         ( newLiqBought      #<= newActualLiqBought      ) #&&
                         ( newLiqSold        #<= newActualLiqSold        ) #&&
 
-                        ( pothersUnchanged  # swap.boughtAsset  -- TODO FIXME
+                        ( pothersUnchanged  # swap.boughtAsset
                                             # swap.soldAsset 
                                             # addedBought
                                             # addedSold
