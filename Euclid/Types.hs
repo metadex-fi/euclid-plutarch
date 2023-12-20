@@ -22,6 +22,7 @@ import qualified Plutarch.Monadic as P
 import Plutarch.Num
 import Plutarch.Maybe
 import Plutarch.Unsafe (punsafeDowncast)
+import Plutarch.Lift
 
 newtype PAsset (s :: S)
     = PAsset
@@ -394,6 +395,53 @@ instance PTryFrom PData (PAsData PEuclidDatum)
 -- instance PTryFrom PData (PAsData PPartialSwap)
 -- instance PTryFrom PData PPartialSwap
 
+data PState s
+  = PState (Term s PInteger) (Term s PInteger) (Term s PJumpsize) (Term s PJumpsize)
+  deriving stock (Generic)
+  deriving anyclass (PlutusType)
+
+instance DerivePlutusType PState where type DPTStrat _ = PlutusTypeScott
+
+-- newtype PState (s :: S)
+--     = PState
+--         ( Term
+--             s
+--             ( PDataRecord
+--                 '["liqBought" ':= PInteger
+--                 ,"liqSold" ':= PInteger 
+--                 ,"ancJsreBought" ':= PJumpsize
+--                 ,"ancJsreSold" ':= PJumpsize
+--                 ]
+--             )
+--         )
+--     deriving stock (Generic)
+--     deriving anyclass (PlutusType, PIsData, PDataFields, PEq)
+-- instance DerivePlutusType PState where type DPTStrat _ = PlutusTypeData
+-- instance PTryFrom PData (PAsData PState)
+-- instance PTryFrom PData PState
+
+
+newtype PSubSwap (s :: S)
+    = PSubSwap
+        ( Term
+            s
+            ( PDataRecord
+                '["deltaBought" ':= PPositive
+                ,"deltaSold" ':= PPositive 
+                ,"expBought" ':= PInteger
+                ,"expSold" ':= PInteger
+                ]
+            )
+        )
+    deriving stock (Generic)
+    deriving anyclass (PlutusType, PIsData, PDataFields, PEq)--, PShow)
+instance DerivePlutusType PSubSwap where type DPTStrat _ = PlutusTypeData
+instance PTryFrom PData (PAsData PSubSwap)
+-- instance PTryFrom PData PSubSwap
+-- instance PUnsafeLiftDecl PSubSwap
+
+
+
 newtype PSwap (s :: S)
     = PSwap
         ( Term
@@ -401,15 +449,15 @@ newtype PSwap (s :: S)
             ( PDataRecord
                 '["boughtAsset" ':= PAsset
                 ,"soldAsset" ':= PAsset
-                ,"boughtExp" ':= PInteger
-                ,"soldExp" ':= PInteger
+                , "subSwaps" ':= PBuiltinList (PAsData PSubSwap) -- TODO PList vs. PBuiltinList?
                 ]
             )
         )
     deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PDataFields, PEq, PShow)
+    deriving anyclass (PlutusType, PIsData, PDataFields, PEq)--, PShow)
 instance DerivePlutusType PSwap where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData (PAsData PSwap)
+-- instance PTryFrom PData (PAsData PSwap)
+-- instance PTryFrom PData (PAsData (PBuiltinList (PAsData PSubSwap)))
 instance PTryFrom PData PSwap
 
 -- | redeemer.
@@ -417,6 +465,6 @@ data PEuclidAction (s :: S)
     = PSwapRedeemer (Term s (PDataRecord '["swap" ':= PSwap]))
     | PAdminRedeemer (Term s (PDataRecord '[])) -- TODO unnecessary
     deriving stock (Generic)
-    deriving anyclass (PlutusType, PIsData, PShow)
+    deriving anyclass (PlutusType, PIsData)--, PShow)
 instance DerivePlutusType PEuclidAction where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PEuclidAction
