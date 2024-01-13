@@ -90,15 +90,22 @@ psubSwap = phoistAcyclic $ plam $ \baseJsreBought baseJsreSold weightBought weig
                 plet (ancJseBought #<= newLiqBought * jsppeBought * weightBought) $ \priceFitBought ->
                 plet (newLiqSold * jseSold * weightSold #<= ancJsppeSold) $ \priceFitSold ->
 
-                pif (valueEquation #&& priceFitBought #&& priceFitSold)
-                    (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
-                    (ptraceError "subswap validation failure")
+                pif (valueEquation)
+                    (pif (priceFitBought)
+                        (pif (priceFitSold)
+                            (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
+                            (ptraceError "priceFitSold"))
+                        (ptraceError "priceFitBought"))
+                    (ptraceError "valueEquation")
+                -- pif (valueEquation #&& priceFitBought #&& priceFitSold)
+                --     (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
+                --     (ptraceError "subswap validation failure")
 
              )
      )
 
 pswap :: Term s (PDirac :--> PSwap :--> PScriptContext :--> PBool)
-pswap = phoistAcyclic $ plam $ \dirac' swap' ctx -> P.do 
+pswap = plam $ \dirac' swap' ctx -> P.do 
     info <- pletFields @["inputs", "referenceInputs", "outputs", "mint"] 
             $ pfield @"txInfo" # ctx
 
@@ -385,7 +392,7 @@ padmin = plam $ \owner ctx -> P.do
     (signer #== owner)
 
 peuclidValidator :: ClosedTerm PValidator
-peuclidValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do 
+peuclidValidator = plam $ \dat' red' ctx -> P.do 
     let dat = (flip (ptryFrom @PEuclidDatum) fst) dat'
         pass = (pmatch dat $ \case 
             PParamDatum param -> 
@@ -402,7 +409,6 @@ peuclidValidator = phoistAcyclic $ plam $ \dat' red' ctx -> P.do
                         # (pfield @"owner" # dirac)
                         # ctx
                     PSwapRedeemer swap -> pswap # dirac # (pfield @"swap" # swap) # ctx
-                    -- _ -> ( ptraceError "unknown redeemer" )
             ) 
     pif 
         pass 
