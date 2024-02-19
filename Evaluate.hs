@@ -16,6 +16,14 @@ import Plutarch.Evaluate
 import PlutusCore.Evaluation.Machine.ExBudget (ExBudget)
 -- import PlutusLedgerApi.V1.Scripts (Script (Script))
 import qualified UntypedPlutusCore as UPLC
+import Data.Text qualified as T
+import Plutarch.Script
+import Plutarch.Internal
+import Control.Monad.Reader (ReaderT (ReaderT), ask, runReaderT)
+import Untyped (UTerm, conv) -- from metatheory
+import PlutusCore.Quote
+import Control.Monad.Error.Class (MonadError)
+import PlutusCore.Pretty -- (prettyPlcReadableDebug)
 
 {-
 for development:
@@ -55,3 +63,38 @@ eval term = case evaluated of
 -- prints the compiled code
 pt :: ClosedTerm a -> String
 pt term = printTerm def term
+
+toScript :: ClosedTerm a -> Script
+toScript term = either (error . T.unpack) id $ compile def term
+
+toUProgram :: ClosedTerm a -> UPLC.Program UPLC.DeBruijn UPLC.DefaultUni UPLC.DefaultFun ()
+toUProgram term = unScript $ toScript term
+
+toUTerm :: ClosedTerm a -> UPLC.Term UPLC.DeBruijn UPLC.DefaultUni UPLC.DefaultFun ()
+toUTerm t = case asClosedRawTerm t of
+  TermMonad (ReaderT t') -> case t' def of 
+    Right t'' -> compile' t''
+
+fakeNameTerm :: UPLC.Term UPLC.DeBruijn uni fun ann -> UPLC.Term UPLC.NamedDeBruijn uni fun ann
+fakeNameTerm = UPLC.termMapNames UPLC.fakeNameDeBruijn 
+
+toFakeNameUTerm :: ClosedTerm a -> UPLC.Term UPLC.NamedDeBruijn UPLC.DefaultUni UPLC.DefaultFun ()
+toFakeNameUTerm = fakeNameTerm . toUTerm
+
+eraseIndex :: UPLC.NamedDeBruijn -> UPLC.NamedDeBruijn
+eraseIndex (UPLC.NamedDeBruijn name ix) = UPLC.NamedDeBruijn name 0
+
+eraseIndexTerm :: UPLC.Term UPLC.NamedDeBruijn uni fun ann -> UPLC.Term UPLC.NamedDeBruijn uni fun ann
+eraseIndexTerm = UPLC.termMapNames eraseIndex
+
+unDeBruijn :: ClosedTerm a -> Doc ann
+unDeBruijn = prettyPlcReadableDebug . toFakeNameUTerm
+-- unDeBruijn = prettyPlcReadableDebug . eraseIndexTerm . toFakeNameUTerm
+
+convTerm :: ClosedTerm a -> UTerm
+convTerm = conv . toFakeNameUTerm
+
+-- unDeBruijn :: (PlutusCore.Quote.MonadQuote m, UPLC.AsFreeVariableError e, 
+--   Control.Monad.Error.Class.MonadError e m) => 
+--     ClosedTerm a -> m (UPLC.Term UPLC.Name UPLC.DefaultUni UPLC.DefaultFun ())
+-- unDeBruijn = UPLC.unDeBruijnTerm . toFakeNameUTerm

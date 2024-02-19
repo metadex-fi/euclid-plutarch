@@ -90,16 +90,16 @@ psubSwap = phoistAcyclic $ plam $ \baseJsreBought baseJsreSold weightBought weig
                 plet (ancJseBought #<= newLiqBought * jsppeBought * weightBought) $ \priceFitBought ->
                 plet (newLiqSold * jseSold * weightSold #<= ancJsppeSold) $ \priceFitSold ->
 
-                pif (valueEquation)
-                    (pif (priceFitBought)
-                        (pif (priceFitSold)
-                            (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
-                            (ptraceError "priceFitSold"))
-                        (ptraceError "priceFitBought"))
-                    (ptraceError "valueEquation")
-                -- pif (valueEquation #&& priceFitBought #&& priceFitSold)
-                --     (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
-                --     (ptraceError "subswap validation failure")
+                -- pif (valueEquation)
+                --     (pif (priceFitBought)
+                --         (pif (priceFitSold)
+                --             (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
+                --             (ptraceError "priceFitSold"))
+                --         (ptraceError "priceFitBought"))
+                --     (ptraceError "valueEquation")
+                pif (valueEquation #&& priceFitBought #&& priceFitSold)
+                    (pcon $ PState newLiqBought newLiqSold newAncJsreBought newAncJsreSold)
+                    (ptraceError "subswap validation failure")
 
              )
      )
@@ -187,42 +187,42 @@ pswap = plam $ \dirac' swap' ctx -> P.do
                         addedSold           = newBalSold #- oldBalSold
 
 
-                    (   ( pif ((pfromData param.active) #== 1)     (pconstant True) ( ptraceError "not active" )           ) #&&
+                    -- (   ( pif ((pfromData param.active) #== 1)     (pconstant True) ( ptraceError "not active" )           ) #&&
 
-                        ( pif (dirac.owner       #== newDirac.owner)  (pconstant True) ( ptraceError "owner" )         ) #&&
-                        ( pif (dirac.threadNFT   #== newDirac.threadNFT) (pconstant True) ( ptraceError "threadNFT" )      ) #&&
-                        ( pif (dirac.paramNFT    #== newDirac.paramNFT)  (pconstant True) ( ptraceError "paramNFT" )      ) #&&
+                    --     ( pif (dirac.owner       #== newDirac.owner)  (pconstant True) ( ptraceError "owner" )         ) #&&
+                    --     ( pif (dirac.threadNFT   #== newDirac.threadNFT) (pconstant True) ( ptraceError "threadNFT" )      ) #&&
+                    --     ( pif (dirac.paramNFT    #== newDirac.paramNFT)  (pconstant True) ( ptraceError "paramNFT" )      ) #&&
 
-                        ( pif (newAnchorPrices   #== newDirac.anchorPrices) (pconstant True) ( ptraceError "newAnchorPrices" )   ) #&&
+                    --     ( pif (newAnchorPrices   #== newDirac.anchorPrices) (pconstant True) ( ptraceError "newAnchorPrices" )   ) #&&
 
-                        ( pif (param.minAda      #<= newValueAda) (pconstant True) ( ptraceError "minAda" )             ) #&& 
-                        ( pif (newLiqBought      #<= newActualLiqBought) (pconstant True) ( ptraceError "newLiqBought" )      ) #&&
-                        ( pif (newLiqSold        #<= newActualLiqSold)  (pconstant True) ( ptraceError "newLiqSold" )       ) #&&
+                    --     ( pif (param.minAda      #<= newValueAda) (pconstant True) ( ptraceError "minAda" )             ) #&& 
+                    --     ( pif (newLiqBought      #<= newActualLiqBought) (pconstant True) ( ptraceError "newLiqBought" )      ) #&&
+                    --     ( pif (newLiqSold        #<= newActualLiqSold)  (pconstant True) ( ptraceError "newLiqSold" )       ) #&&
 
-                        ( pif (pothersUnchanged  # swap.boughtAsset
-                                            # swap.soldAsset 
-                                            # addedBought
-                                            # addedSold
-                                            # addedAmnts) (pconstant True) ( ptraceError "pothersUnchanged" ))
-                     )
-                    -- (   ( (pfromData param.active) #== 1                ) #&&
-
-                    --     ( dirac.owner       #== newDirac.owner          ) #&&
-                    --     ( dirac.threadNFT   #== newDirac.threadNFT      ) #&&
-                    --     ( dirac.paramNFT    #== newDirac.paramNFT       ) #&&
-
-                    --     ( newAnchorPrices   #== newDirac.anchorPrices   ) #&&
-
-                    --     ( param.minAda      #<= newValueAda             ) #&& 
-                    --     ( newLiqBought      #<= newActualLiqBought      ) #&&
-                    --     ( newLiqSold        #<= newActualLiqSold        ) #&&
-
-                    --     ( pothersUnchanged  # swap.boughtAsset
+                    --     ( pif (pothersUnchanged  # swap.boughtAsset
                     --                         # swap.soldAsset 
                     --                         # addedBought
                     --                         # addedSold
-                    --                         # addedAmnts )
+                    --                         # addedAmnts) (pconstant True) ( ptraceError "pothersUnchanged" ))
                     --  )
+                    (   ( (pfromData param.active) #== 1                ) #&&
+
+                        ( dirac.owner       #== newDirac.owner          ) #&&
+                        ( dirac.threadNFT   #== newDirac.threadNFT      ) #&&
+                        ( dirac.paramNFT    #== newDirac.paramNFT       ) #&&
+
+                        ( newAnchorPrices   #== newDirac.anchorPrices   ) #&&
+
+                        ( param.minAda      #<= newValueAda             ) #&& 
+                        ( newLiqBought      #<= newActualLiqBought      ) #&&
+                        ( newLiqSold        #<= newActualLiqSold        ) #&&
+
+                        ( pothersUnchanged  # swap.boughtAsset
+                                            # swap.soldAsset 
+                                            # addedBought
+                                            # addedSold
+                                            # addedAmnts )
+                     )
 
              )
 

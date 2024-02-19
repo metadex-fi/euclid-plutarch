@@ -122,3 +122,75 @@ ptestValueEq = P.do
 -- | type PMintingPolicy = PData :--> Contexts.PScriptContext :--> POpaque
 pmintAlways :: ClosedTerm PMintingPolicy
 pmintAlways = plam $ \_ _ -> popaque $ pcon PUnit
+
+
+-- Agda
+pf1 :: Term s (PInteger :--> PInteger)
+pf1 = plam $ \x -> (x + 5) * 2
+
+pf2 :: Term s (PInteger :--> PInteger)
+pf2 = plam $ \x -> (x * 2) + 10
+
+pplusTwo :: Term s (PInteger :--> PInteger)
+pplusTwo = plam $ \x -> x + 2
+
+ptwoPlus :: Term s (PInteger :--> PInteger)
+ptwoPlus = plam $ \x -> 2 + x
+{-
+
+
+Right (
+  Script {unScript = 
+    Program {
+      _progAnn = (), 
+      _progVer = Version () 1 0 0, 
+      _progTerm = 
+
+
+
+
+LamAbs 
+  () 
+  (DeBruijn {dbnIndex = 0}) 
+  (Apply 
+    () 
+    (Apply 
+      () 
+      (Builtin () AddInteger) 
+      (Apply 
+        () 
+        (Apply 
+          () 
+          (Builtin () MultiplyInteger) 
+          (Var 
+            () 
+            (DeBruijn {dbnIndex = 1})
+          )
+        ) 
+        (Constant 
+          () 
+          (Some 
+            (ValueOf DefaultUniInteger 2)
+          )
+        )
+      )
+    ) 
+    (Constant 
+      () 
+      (Some 
+        (ValueOf DefaultUniInteger 10)
+      )
+    )
+  )
+
+
+
+
+
+        }
+      }
+    )
+
+
+
+-}
