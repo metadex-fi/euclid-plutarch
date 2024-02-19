@@ -207,6 +207,8 @@ pswap = plam $ \dirac' swap' ctx -> P.do
                     --  )
                     (   ( (pfromData param.active) #== 1                ) #&&
 
+                        ( oldTxO.address    #== newTxO.address          ) #&&
+
                         ( dirac.owner       #== newDirac.owner          ) #&&
                         ( dirac.threadNFT   #== newDirac.threadNFT      ) #&&
                         ( dirac.paramNFT    #== newDirac.paramNFT       ) #&&
